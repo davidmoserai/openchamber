@@ -1,18 +1,24 @@
 /**
  * Install-state tracking for the ANE dictation model.
  *
- * FluidAudio manages its own CoreML model cache internally (HuggingFace
- * download + compile, cached under `~/Library/Application Support/FluidAudio`)
- * — we don't reach into that cache directly since its layout is an internal
- * implementation detail of the FluidAudio package, not a documented contract.
- * Instead we run the helper's `download` mode (idempotent: a no-op if
- * FluidAudio's cache already has the model) and record success with our own
- * marker file, mirroring the installed/not-installed state the sherpa models
- * already expose to the UI.
+ * Download delegates to FluidAudio's own downloader inside the helper
+ * process (idempotent: a no-op if its cache already has the model); we
+ * record success with our own marker file, mirroring the installed/not
+ * -installed state the sherpa models already expose to the UI.
+ *
+ * Delete removes FluidAudio's on-disk cache directly. FluidAudio's own docs
+ * (Manual Model Loading guide) document this cache path as
+ * `~/Library/Application Support/FluidAudio/Models/<repo>` on macOS; the
+ * actual observed directory name for this model is `parakeet-tdt-0.6b-v3`
+ * (verified by inspection), so both that name and the full HuggingFace repo
+ * name are tried. If neither exists there's nothing to reclaim — clearing
+ * our own marker file is still enough to make the app treat it as
+ * not-installed and re-download correctly next time it's selected.
  */
 
 import { spawn } from 'child_process';
-import { mkdir, stat, writeFile } from 'fs/promises';
+import { mkdir, rm, stat, writeFile } from 'fs/promises';
+import os from 'os';
 import path from 'path';
 
 import { resolveAneHelperPath } from './helper-path.js';
@@ -20,8 +26,17 @@ import { resolveAneHelperPath } from './helper-path.js';
 const MARKER_FILENAME = '.ane-parakeet-tdt-v3-installed';
 const STDERR_TAIL_MAX_CHARS = 2000;
 
+// Candidate directory names under FluidAudio's own cache root, newest/most
+// likely first.
+const FLUIDAUDIO_CACHE_MODEL_DIRNAMES = ['parakeet-tdt-0.6b-v3', 'parakeet-tdt-0.6b-v3-coreml'];
+
 function markerPath(modelsDir) {
   return path.join(modelsDir, MARKER_FILENAME);
+}
+
+function fluidAudioModelCacheDirs() {
+  const cacheRoot = path.join(os.homedir(), 'Library', 'Application Support', 'FluidAudio', 'Models');
+  return FLUIDAUDIO_CACHE_MODEL_DIRNAMES.map((name) => path.join(cacheRoot, name));
 }
 
 /**
@@ -78,4 +93,16 @@ export async function ensureAneSttModel({ modelsDir }) {
 
   await mkdir(modelsDir, { recursive: true });
   await writeFile(markerPath(modelsDir), new Date().toISOString());
+}
+
+/**
+ * Delete the ANE model: FluidAudio's on-disk cache (best-effort, see module
+ * docs above) plus our install marker.
+ * @param {string} modelsDir
+ */
+export async function deleteAneSttModel(modelsDir) {
+  await Promise.all(
+    fluidAudioModelCacheDirs().map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+  await rm(markerPath(modelsDir), { force: true });
 }

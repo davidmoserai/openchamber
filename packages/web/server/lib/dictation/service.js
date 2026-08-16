@@ -14,7 +14,7 @@ import { rm } from 'fs/promises';
 import { DictationWorkerClient, WorkerBackedTranscriptionSession } from './local/worker-client.js';
 import { AneHelperClient, AneBackedTranscriptionSession } from './local-ane/client.js';
 import { isAneDictationSupported } from './local-ane/capability.js';
-import { ensureAneSttModel, isAneSttModelInstalled } from './local-ane/model-downloader.js';
+import { deleteAneSttModel, ensureAneSttModel, isAneSttModelInstalled } from './local-ane/model-downloader.js';
 import { OpenAICompatibleTranscriptionSession } from './openai-compatible-session.js';
 import {
   ANE_STT_MODEL_DESCRIPTION,
@@ -210,8 +210,7 @@ export function createDictationService({ modelsDir }) {
     );
     // Only ever surfaced on macOS Apple Silicon with the helper binary
     // present — everyone else sees exactly the sherpa-onnx CPU model list
-    // above, unchanged. Not user-deletable: it's managed by FluidAudio's own
-    // cache, which this app doesn't own the layout of (see local-ane/model-downloader.js).
+    // above, unchanged.
     if (isAneDictationSupported()) {
       models.push({
         id: ANE_STT_MODEL_ID,
@@ -220,7 +219,7 @@ export function createDictationService({ modelsDir }) {
         downloading: downloadStates.get(ANE_STT_MODEL_ID) === 'downloading',
         downloadProgress: downloadProgress.get(ANE_STT_MODEL_ID) ?? null,
         downloadError: downloadErrors.get(ANE_STT_MODEL_ID) || null,
-        deletable: false,
+        deletable: true,
       });
     }
     const ttsModels = await Promise.all(
@@ -332,19 +331,18 @@ export function createDictationService({ modelsDir }) {
    * on the next use if the model is selected again.
    */
   const deleteModel = async (modelId) => {
-    if (isAneSttModelId(modelId)) {
-      return {
-        ok: false,
-        error: 'The Apple Neural Engine model is managed automatically and cannot be deleted here',
-      };
-    }
-    if (!isLocalModelId(modelId)) {
+    const isAne = isAneSttModelId(modelId);
+    if (!isAne && !isLocalModelId(modelId)) {
       return { ok: false, error: 'Unknown model id' };
     }
     if (downloadStates.get(modelId) === 'downloading') {
       return { ok: false, error: 'Model is downloading' };
     }
-    await rm(getLocalSttModelDir(modelsDir, modelId), { recursive: true, force: true });
+    if (isAne) {
+      await deleteAneSttModel(modelsDir);
+    } else {
+      await rm(getLocalSttModelDir(modelsDir, modelId), { recursive: true, force: true });
+    }
     downloadErrors.delete(modelId);
     return { ok: true };
   };
