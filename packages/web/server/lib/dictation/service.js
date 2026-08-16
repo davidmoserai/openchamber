@@ -12,8 +12,13 @@
 import { rm } from 'fs/promises';
 
 import { DictationWorkerClient, WorkerBackedTranscriptionSession } from './local/worker-client.js';
+import { AneHelperClient, AneBackedTranscriptionSession } from './local-ane/client.js';
+import { isAneDictationSupported } from './local-ane/capability.js';
+import { ensureAneSttModel, isAneSttModelInstalled } from './local-ane/model-downloader.js';
 import { OpenAICompatibleTranscriptionSession } from './openai-compatible-session.js';
 import {
+  ANE_STT_MODEL_DESCRIPTION,
+  ANE_STT_MODEL_ID,
   DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
   LOCAL_STT_MODEL_CATALOG,
@@ -21,6 +26,7 @@ import {
   LOCAL_TTS_MODEL_CATALOG,
   LOCAL_TTS_MODEL_IDS,
   getLocalSttModelDir,
+  isAneSttModelId,
   isLocalModelId,
   isLocalSttModelId,
   isLocalTtsModelId,
@@ -29,6 +35,7 @@ import { ensureLocalSttModel, isLocalSttModelInstalled } from './local/model-dow
 
 export function createDictationService({ modelsDir }) {
   const workerClient = new DictationWorkerClient();
+  const aneClient = new AneHelperClient();
   /** modelId -> 'downloading' | 'error' */
   const downloadStates = new Map();
   /** modelId -> last download error message */
@@ -45,17 +52,23 @@ export function createDictationService({ modelsDir }) {
     }
     downloadStates.set(modelId, 'downloading');
     downloadErrors.delete(modelId);
-    downloadProgress.set(modelId, 0);
-    const promise = ensureLocalSttModel({
-      modelsDir,
-      modelId,
-      onProgress: (downloadedBytes, totalBytes) => {
-        downloadProgress.set(
+    // The ANE helper delegates to FluidAudio's own downloader, which doesn't
+    // report byte progress back to us — stays null (an already-supported UI
+    // state) instead of a fake 0.
+    downloadProgress.set(modelId, isAneSttModelId(modelId) ? null : 0);
+    const ensure = isAneSttModelId(modelId)
+      ? ensureAneSttModel({ modelsDir })
+      : ensureLocalSttModel({
+          modelsDir,
           modelId,
-          totalBytes ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : null,
-        );
-      },
-    })
+          onProgress: (downloadedBytes, totalBytes) => {
+            downloadProgress.set(
+              modelId,
+              totalBytes ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : null,
+            );
+          },
+        });
+    const promise = ensure
       .then(() => {
         downloadStates.delete(modelId);
         downloadPromises.delete(modelId);
@@ -72,6 +85,9 @@ export function createDictationService({ modelsDir }) {
   };
 
   const resolveLocalModelId = (requested) => {
+    if (isAneSttModelId(requested) && isAneDictationSupported()) {
+      return requested;
+    }
     return isLocalSttModelId(requested) ? requested : DEFAULT_LOCAL_STT_MODEL;
   };
 
@@ -107,7 +123,10 @@ export function createDictationService({ modelsDir }) {
     }
 
     const modelId = resolveLocalModelId(options.localModel);
-    const installed = await isLocalSttModelInstalled(modelsDir, modelId);
+    const isAne = isAneSttModelId(modelId);
+    const installed = isAne
+      ? await isAneSttModelInstalled(modelsDir)
+      : await isLocalSttModelInstalled(modelsDir, modelId);
     if (!installed) {
       const state = downloadStates.get(modelId);
       if (state === 'error') {
@@ -126,6 +145,20 @@ export function createDictationService({ modelsDir }) {
         retryable: true,
         reasonCode: 'model_download_in_progress',
       };
+    }
+
+    if (isAne) {
+      const session = new AneBackedTranscriptionSession(aneClient);
+      try {
+        await session.connect();
+      } catch (error) {
+        return {
+          error: error?.message || String(error),
+          retryable: true,
+          reasonCode: 'stt_unavailable',
+        };
+      }
+      return { session };
     }
 
     const session = new WorkerBackedTranscriptionSession(workerClient, { modelsDir, modelId });
@@ -169,11 +202,27 @@ export function createDictationService({ modelsDir }) {
       downloading: downloadStates.get(id) === 'downloading',
       downloadProgress: downloadProgress.get(id) ?? null,
       downloadError: downloadErrors.get(id) || null,
+      deletable: true,
     });
 
     const models = await Promise.all(
       LOCAL_STT_MODEL_IDS.map((id) => describeModel(id, LOCAL_STT_MODEL_CATALOG)),
     );
+    // Only ever surfaced on macOS Apple Silicon with the helper binary
+    // present — everyone else sees exactly the sherpa-onnx CPU model list
+    // above, unchanged. Not user-deletable: it's managed by FluidAudio's own
+    // cache, which this app doesn't own the layout of (see local-ane/model-downloader.js).
+    if (isAneDictationSupported()) {
+      models.push({
+        id: ANE_STT_MODEL_ID,
+        description: ANE_STT_MODEL_DESCRIPTION,
+        installed: await isAneSttModelInstalled(modelsDir),
+        downloading: downloadStates.get(ANE_STT_MODEL_ID) === 'downloading',
+        downloadProgress: downloadProgress.get(ANE_STT_MODEL_ID) ?? null,
+        downloadError: downloadErrors.get(ANE_STT_MODEL_ID) || null,
+        deletable: false,
+      });
+    }
     const ttsModels = await Promise.all(
       LOCAL_TTS_MODEL_IDS.map((id) => describeModel(id, LOCAL_TTS_MODEL_CATALOG)),
     );
@@ -259,10 +308,17 @@ export function createDictationService({ modelsDir }) {
    * download action so Settings can pre-download models).
    */
   const requestModelDownload = async (modelId) => {
-    if (!isLocalModelId(modelId)) {
+    const isAne = isAneSttModelId(modelId);
+    if (!isAne && !isLocalModelId(modelId)) {
       return { ok: false, error: 'Unknown model id' };
     }
-    if (await isLocalSttModelInstalled(modelsDir, modelId)) {
+    if (isAne && !isAneDictationSupported()) {
+      return { ok: false, error: 'Apple Neural Engine dictation is not supported on this device' };
+    }
+    const installed = isAne
+      ? await isAneSttModelInstalled(modelsDir)
+      : await isLocalSttModelInstalled(modelsDir, modelId);
+    if (installed) {
       return { ok: true, installed: true };
     }
     void startModelDownload(modelId);
@@ -276,6 +332,12 @@ export function createDictationService({ modelsDir }) {
    * on the next use if the model is selected again.
    */
   const deleteModel = async (modelId) => {
+    if (isAneSttModelId(modelId)) {
+      return {
+        ok: false,
+        error: 'The Apple Neural Engine model is managed automatically and cannot be deleted here',
+      };
+    }
     if (!isLocalModelId(modelId)) {
       return { ok: false, error: 'Unknown model id' };
     }
@@ -289,6 +351,7 @@ export function createDictationService({ modelsDir }) {
 
   const shutdown = () => {
     workerClient.shutdown();
+    aneClient.shutdown();
   };
 
   return {

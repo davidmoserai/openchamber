@@ -84,6 +84,25 @@ export const LOCAL_TTS_MODEL_CATALOG = {
   },
 };
 
+/**
+ * Apple Neural Engine STT model (FluidAudio / CoreML), macOS Apple Silicon
+ * only. Not part of LOCAL_STT_MODEL_CATALOG: it has no archive/extracted-dir
+ * shape (see dictation/local-ane/model-downloader.js) and is only ever
+ * surfaced in status/session routing when
+ * dictation/local-ane/capability.js reports the host supports it.
+ */
+export const ANE_STT_MODEL_ID = 'parakeet-tdt-0.6b-v3-ane';
+export const ANE_STT_MODEL_DESCRIPTION =
+  'NVIDIA Parakeet TDT v3 on the Apple Neural Engine (25 European languages, auto-detected)';
+
+/**
+ * @param {string} modelId
+ * @returns {boolean}
+ */
+export function isAneSttModelId(modelId) {
+  return modelId === ANE_STT_MODEL_ID;
+}
+
 export const DEFAULT_LOCAL_STT_MODEL = 'parakeet-tdt-0.6b-v2-int8';
 export const DEFAULT_LOCAL_TTS_MODEL = 'kokoro-en-v0_19';
 

@@ -1763,6 +1763,8 @@ export const settingsDict = {
   'settings.voice.page.stt.model.whisperTiny': 'Whisper tiny（多语言）',
   'settings.voice.page.stt.badge.bestForEnglish': '英语最佳',
   'settings.voice.page.stt.badge.bestForMultilingual': '多语言最佳',
+  'settings.voice.page.stt.model.parakeetAne': 'Parakeet v3（Neural Engine）',
+  'settings.voice.page.stt.badge.fastest': '最快',
   'settings.voice.page.stt.meta.accuracy': '准确度',
   'settings.voice.page.stt.meta.speed': '速度',
   'settings.voice.page.stt.modelInstalled': '模型已安装',

@@ -1763,6 +1763,8 @@ export const settingsDict = {
   "settings.voice.page.stt.model.whisperTiny": "Whisper tiny (мультимовна)",
   "settings.voice.page.stt.badge.bestForEnglish": "Найкраща для англійської",
   "settings.voice.page.stt.badge.bestForMultilingual": "Найкраща мультимовна",
+  "settings.voice.page.stt.model.parakeetAne": "Parakeet v3 (Neural Engine)",
+  "settings.voice.page.stt.badge.fastest": "Найшвидша",
   "settings.voice.page.stt.meta.accuracy": "Точність",
   "settings.voice.page.stt.meta.speed": "Швидкість",
   "settings.voice.page.stt.modelInstalled": "Модель встановлено",

@@ -1763,6 +1763,8 @@ export const settingsDict = {
   'settings.voice.page.stt.model.whisperTiny': 'Whisper tiny (다국어)',
   'settings.voice.page.stt.badge.bestForEnglish': '영어에 최적',
   'settings.voice.page.stt.badge.bestForMultilingual': '다국어에 최적',
+  'settings.voice.page.stt.model.parakeetAne': 'Parakeet v3 (Neural Engine)',
+  'settings.voice.page.stt.badge.fastest': '가장 빠름',
   'settings.voice.page.stt.meta.accuracy': '정확도',
   'settings.voice.page.stt.meta.speed': '속도',
   'settings.voice.page.stt.modelInstalled': '모델 설치됨',

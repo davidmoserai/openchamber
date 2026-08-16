@@ -2089,6 +2089,8 @@ export const settingsDict = {
   'settings.voice.page.stt.model.whisperTiny': 'Whisper tiny (wielojęzyczny)',
   'settings.voice.page.stt.badge.bestForEnglish': 'Najlepszy do angielskiego',
   'settings.voice.page.stt.badge.bestForMultilingual': 'Najlepszy wielojęzyczny',
+  'settings.voice.page.stt.model.parakeetAne': 'Parakeet v3 (Neural Engine)',
+  'settings.voice.page.stt.badge.fastest': 'Najszybszy',
   'settings.voice.page.stt.meta.accuracy': 'Dokładność',
   'settings.voice.page.stt.meta.speed': 'Szybkość',
   'settings.voice.page.stt.modelInstalled': 'Model zainstalowany',

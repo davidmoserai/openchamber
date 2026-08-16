@@ -41,6 +41,7 @@ const LOCAL_STT_MODELS = [
         accuracy: 5,
         speed: 5,
         size: '460 MB',
+        serverGated: false,
     },
     {
         id: 'parakeet-tdt-0.6b-v3-int8',
@@ -49,6 +50,7 @@ const LOCAL_STT_MODELS = [
         accuracy: 5,
         speed: 4,
         size: '465 MB',
+        serverGated: false,
     },
     {
         id: 'whisper-base-int8',
@@ -57,6 +59,7 @@ const LOCAL_STT_MODELS = [
         accuracy: 3,
         speed: 3,
         size: '200 MB',
+        serverGated: false,
     },
     {
         id: 'whisper-tiny-int8',
@@ -65,6 +68,20 @@ const LOCAL_STT_MODELS = [
         accuracy: 2,
         speed: 4,
         size: '115 MB',
+        serverGated: false,
+    },
+    {
+        // macOS Apple Silicon only (FluidAudio / Neural Engine) — server-gated,
+        // see the `serverGated` filter below. Never rendered unless the
+        // dictation status response actually lists this id, so hardware/OS
+        // that can't run it never sees a dead option here.
+        id: 'parakeet-tdt-0.6b-v3-ane',
+        labelKey: 'settings.voice.page.stt.model.parakeetAne',
+        badgeKey: 'settings.voice.page.stt.badge.fastest',
+        accuracy: 5,
+        speed: 5,
+        size: '600 MB',
+        serverGated: true,
     },
 ] as const;
 
@@ -74,6 +91,7 @@ interface DictationModelState {
     downloading: boolean;
     downloadProgress: number | null;
     downloadError: string | null;
+    deletable?: boolean;
 }
 
 const RatingBar = ({ value, label }: { value: number; label: string }) => (
@@ -163,13 +181,15 @@ const LocalModelPicker = ({
         }
     };
 
+    const visibleModels = LOCAL_STT_MODELS.filter((entry) => !entry.serverGated || models.has(entry.id));
+
     return (
         <div
             role="radiogroup"
             aria-label={t('settings.voice.page.field.model')}
             className="mt-1.5 grid w-full grid-cols-1 gap-3 @xl:grid-cols-2"
         >
-            {LOCAL_STT_MODELS.map((entry) => {
+            {visibleModels.map((entry) => {
                 const selected = selectedModelId === entry.id;
                 const state = models.get(entry.id) ?? null;
                 return (
@@ -224,17 +244,19 @@ const LocalModelPicker = ({
                             <div className="flex shrink-0 items-center gap-1">
                                 {state?.installed ? (
                                     <>
-                                        <Button
-                                            variant="ghost"
-                                            size="xs"
-                                            className="h-6 w-6 p-0 text-muted-foreground hover:text-[var(--status-error)]"
-                                            disabled={requestingId === entry.id}
-                                            onClick={() => { void handleDelete(entry.id); }}
-                                            title={t('settings.voice.page.stt.modelDelete')}
-                                            aria-label={t('settings.voice.page.stt.modelDelete')}
-                                        >
-                                            <Icon name="delete-bin" className="h-4 w-4" />
-                                        </Button>
+                                        {state.deletable !== false ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="xs"
+                                                className="h-6 w-6 p-0 text-muted-foreground hover:text-[var(--status-error)]"
+                                                disabled={requestingId === entry.id}
+                                                onClick={() => { void handleDelete(entry.id); }}
+                                                title={t('settings.voice.page.stt.modelDelete')}
+                                                aria-label={t('settings.voice.page.stt.modelDelete')}
+                                            >
+                                                <Icon name="delete-bin" className="h-4 w-4" />
+                                            </Button>
+                                        ) : null}
                                         <Icon
                                             name="checkbox-circle"
                                             className="h-4 w-4 flex-shrink-0 text-[var(--status-success)]"
