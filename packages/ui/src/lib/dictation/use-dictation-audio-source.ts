@@ -22,6 +22,13 @@ export interface DictationAudioSource {
 
 const OUTPUT_RATE = 16000;
 const CHUNK_SAMPLES = OUTPUT_RATE; // ~1s per chunk
+// ScriptProcessorNode delivers ~4096-sample buffers (~85-93ms at common
+// native sample rates of 44.1/48kHz). When stop() is called right as the
+// user finishes speaking, one more buffer's worth of already-captured audio
+// can still be in flight through the browser's audio pipeline; this is how
+// long stop() waits for it to land before tearing the graph down, so the
+// last words spoken aren't silently dropped.
+const STOP_DRAIN_MS = 150;
 
 const getAudioContextCtor = (): typeof AudioContext | null => {
     if (typeof window === 'undefined') {
@@ -174,7 +181,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
             const gain = context.createGain();
             gain.gain.value = 0;
 
-            graphRef.current = {
+            const graph: CaptureGraph = {
                 stream,
                 context,
                 source,
@@ -183,10 +190,16 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
                 pending: new Int16Array(0),
                 started: true,
             };
+            graphRef.current = graph;
 
             processor.onaudioprocess = (event) => {
-                const graph = graphRef.current;
-                if (!graph.started) {
+                // Close over this call's own graph rather than re-reading
+                // graphRef.current: stop() below keeps this processor
+                // connected for a short drain window after a newer
+                // dictation could in principle have already started and
+                // replaced graphRef.current, and a stale trailing callback
+                // must not inject leftover audio into that new session.
+                if (graphRef.current !== graph) {
                     return;
                 }
                 const input = event.inputBuffer.getChannelData(0);
@@ -231,8 +244,17 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
 
     const stop = useCallback(async () => {
         const graph = graphRef.current;
-        graph.started = false;
         setVolume(0);
+
+        // Give one more already-in-flight audio buffer a chance to land in
+        // onaudioprocess (which keeps appending to graph.pending until we
+        // null the handler below) before we tear the graph down — otherwise
+        // whatever the user said in roughly the last STOP_DRAIN_MS is
+        // captured by the microphone but never delivered to us at all.
+        if (graph.started) {
+            await new Promise((resolve) => setTimeout(resolve, STOP_DRAIN_MS));
+        }
+        graph.started = false;
 
         if (graph.processor) {
             try {
