@@ -27,25 +27,30 @@ function devBinaryPath() {
 }
 
 /**
+ * @param {{ platform?: string, resourcesPath?: string | null,
+ *           fileExists?: (path: string) => boolean }} [overrides] injectable
+ *   for tests; defaults read the real host/process. `resourcesPath` only
+ *   exists inside Electron (packaged or dev); it's undefined under plain
+ *   Node, never an empty string in practice.
  * @returns {string | null} absolute path to the helper binary, or null if it
  *   isn't available (wrong platform, or not built/bundled).
  */
-export function resolveAneHelperPath() {
-  if (process.platform !== 'darwin') {
+export function resolveAneHelperPath({
+  platform = process.platform,
+  resourcesPath = process.resourcesPath ?? null,
+  fileExists = existsSync,
+} = {}) {
+  if (platform !== 'darwin') {
     return null;
   }
 
-  // process.resourcesPath only exists inside Electron (packaged or dev); it's
-  // undefined under plain Node, never an empty string in practice.
-  const packagedPath = process.resourcesPath
-    ? path.join(process.resourcesPath, RESOURCE_SUBDIR, BINARY_NAME)
-    : null;
-  if (packagedPath && existsSync(packagedPath)) {
+  const packagedPath = resourcesPath ? path.join(resourcesPath, RESOURCE_SUBDIR, BINARY_NAME) : null;
+  if (packagedPath && fileExists(packagedPath)) {
     return packagedPath;
   }
 
   const devPath = devBinaryPath();
-  if (existsSync(devPath)) {
+  if (fileExists(devPath)) {
     return devPath;
   }
 

@@ -26,6 +26,7 @@ The preload bridge exposes desktop-only APIs to the web UI through `window.__OPE
 | `scripts/ensure-electron.mjs` | Verifies the installed Electron binary is complete and repairs it via the postinstall under Bun |
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
 | `scripts/prepare-opencode-cli.mjs` | Downloads and stages the pinned OpenCode CLI into `resources/opencode-cli` |
+| `scripts/build-ane-helper.mjs` | Compiles `native/ane-dictation-helper` (Swift/FluidAudio) and stages it into `resources/ane-dictation-helper`; macOS arm64 only, no-op elsewhere |
 | `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/main.mjs` for packaging |
 | `scripts/rebuild-native.mjs` | Rebuilds native modules against the Electron runtime |
 | `scripts/package.mjs` | Runs `electron-builder`, with unsigned Windows builds when signing env is missing |
@@ -74,9 +75,10 @@ That runs, in order:
 
 1. `build:web-assets` to build the web UI and copy it into `packages/electron/resources/web-dist`.
 2. `prepare:opencode-cli` to download/cache the pinned OpenCode CLI and copy it into `packages/electron/resources/opencode-cli`.
-3. `bundle:main` to create `packages/electron/dist-bundle/main.mjs`.
-4. `rebuild:native` to rebuild native modules for Electron.
-5. `package.mjs` to run `electron-builder`; its `afterPack` hook stages the compiled macOS icon asset catalog.
+3. `build:ane-helper` to compile `native/ane-dictation-helper` (`swift build -c release`) and copy it into `packages/electron/resources/ane-dictation-helper`. macOS arm64 only — leaves an empty (gitkeep-only) resources dir everywhere else, so the ANE dictation model never appears in Settings on hardware/OS it can't run on (gated again at read time by `packages/web/server/lib/dictation/local-ane/capability.js`).
+4. `bundle:main` to create `packages/electron/dist-bundle/main.mjs`.
+5. `rebuild:native` to rebuild native modules for Electron.
+6. `package.mjs` to run `electron-builder`; its `afterPack` hook stages the compiled macOS icon asset catalog.
 
 Build output goes to `packages/electron/dist`.
 
