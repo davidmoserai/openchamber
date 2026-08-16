@@ -129,6 +129,7 @@ jobs:
           bun run prepare:opencode-cli
           bun run verify:opencode-cli
           bun run build:ane-helper
+          bun run verify:ane-helper
           bun run bundle:main
           # npmRebuild=false in package.json, so electron-builder won't
           # recompile native deps on its own. Rebuild against the target
@@ -136,6 +137,7 @@ jobs:
           bun run rebuild:native
           bunx electron-builder --mac --${{ matrix.arch }} --publish=never
           bun run verify:opencode-cli:packaged
+          bun run verify:ane-helper:packaged
 
       - name: Verify signature + entitlements + notarization
         run: |

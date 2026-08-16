@@ -211,6 +211,7 @@ jobs:
           # matrix — Apple Neural Engine dictation is arm64-only, gated
           # again at read time by local-ane/capability.js.
           bun run build:ane-helper
+          bun run verify:ane-helper
           bun run bundle:main
           # npmRebuild=false in package.json, so electron-builder won't
           # recompile native deps on its own — we must rebuild against the
@@ -219,6 +220,7 @@ jobs:
           bun run rebuild:native
           bunx electron-builder --mac --${{ matrix.arch }} --publish=never
           bun run verify:opencode-cli:packaged
+          bun run verify:ane-helper:packaged
 
       - name: Verify signature + entitlements + notarization
         run: |

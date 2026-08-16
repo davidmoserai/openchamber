@@ -35,6 +35,8 @@
     "ensure:electron": "node ./scripts/ensure-electron.mjs",
     "prepare:opencode-cli": "node ./scripts/prepare-opencode-cli.mjs",
     "build:ane-helper": "node ./scripts/build-ane-helper.mjs",
+    "verify:ane-helper": "node ./scripts/verify-ane-helper.mjs --staged",
+    "verify:ane-helper:packaged": "node ./scripts/verify-ane-helper.mjs --packaged",
     "verify:opencode-cli": "node ./scripts/verify-opencode-cli.mjs --staged",
     "verify:opencode-cli:packaged": "node ./scripts/verify-opencode-cli.mjs --packaged",
     "verify:linux-appimage": "node ./scripts/verify-linux-appimage.mjs",
@@ -47,7 +49,7 @@
     "test:linux-desktop": "node --test ./linux-autostart.test.mjs && node ./scripts/smoke-linux-app-discovery.mjs && node ./scripts/smoke-path-open-utils.mjs",
     "updater:e2e:fixture": "node ./scripts/updater-e2e-fixture.mjs",
     "verify:update-manifest": "node ./scripts/verify-update-manifest.mjs",
-    "package": "bun run build:web-assets && bun run prepare:opencode-cli && bun run build:ane-helper && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs",
+    "package": "bun run build:web-assets && bun run prepare:opencode-cli && bun run build:ane-helper && bun run verify:ane-helper && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs",
     "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
     "type-check": "node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\""
