@@ -1,12 +1,7 @@
 /**
  * Resolves the path to the compiled `ane-dictation-helper` binary (see
- * native/ane-dictation-helper/). macOS Apple Silicon only.
- *
- * - Packaged Electron: bundled under resourcesPath/ane-dictation-helper/
- *   (see packages/electron/scripts/build-ane-helper.mjs, extraResources in
- *   packages/electron/package.json).
- * - Dev / non-packaged: the locally built `swift build -c release` output,
- *   so `bun run dev` and Electron dev both work without a package step.
+ * native/ane-dictation-helper/): packaged Electron resourcesPath, falling
+ * back to the local `swift build -c release` output for dev.
  */
 
 import { existsSync } from 'fs';
@@ -29,11 +24,8 @@ function devBinaryPath() {
 /**
  * @param {{ platform?: string, resourcesPath?: string | null,
  *           fileExists?: (path: string) => boolean }} [overrides] injectable
- *   for tests; defaults read the real host/process. `resourcesPath` only
- *   exists inside Electron (packaged or dev); it's undefined under plain
- *   Node, never an empty string in practice.
- * @returns {string | null} absolute path to the helper binary, or null if it
- *   isn't available (wrong platform, or not built/bundled).
+ *   for tests; defaults read the real host/process.
+ * @returns {string | null}
  */
 export function resolveAneHelperPath({
   platform = process.platform,
