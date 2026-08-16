@@ -1,19 +1,13 @@
 /**
  * Server-side capability check for the Apple Neural Engine dictation engine.
- *
- * This must run on the machine hosting the OpenChamber server, not the
- * browser: dictation audio is processed server-side, and a client can be a
- * different device from the server (remote/mobile access to a Mac-hosted
- * server). Client-side OS sniffing (`navigator.userAgent`) would answer the
- * wrong question here.
+ * See ../DOCUMENTATION.md for why this must run server-side.
  */
 
 import os from 'os';
 
 import { resolveAneHelperPath } from './helper-path.js';
 
-// Darwin 23.x == macOS 14 (Sonoma). FluidAudio's CoreML APIs require macOS 14+
-// (verified against FluidAudio's own Package.swift `platforms` declaration).
+// Darwin 23.x == macOS 14 (Sonoma); FluidAudio requires macOS 14+.
 export const MIN_DARWIN_KERNEL_MAJOR = 23;
 
 function isAppleSiliconMac(platform, cpuModel) {
@@ -28,13 +22,8 @@ function meetsMinimumMacOSVersion(osRelease) {
 
 /**
  * @param {{ platform?: string, cpuModel?: string, osRelease?: string,
- *           helperPath?: string | null }} [overrides] injectable for tests;
- *   defaults read the real host. Prefer the chip model over `process.arch`:
- *   `process.arch` reports 'x64' under Rosetta even on Apple Silicon
- *   hardware, so it can't distinguish real Intel Macs from Rosetta-translated
- *   ones.
- * @returns {boolean} whether this server can run the ANE dictation engine:
- *   Apple Silicon, a new enough macOS, and the helper binary is present.
+ *           helperPath?: string | null }} [overrides] injectable for tests.
+ *   cpuModel over process.arch: the latter reports 'x64' under Rosetta.
  */
 export function isAneDictationSupported({
   platform = process.platform,

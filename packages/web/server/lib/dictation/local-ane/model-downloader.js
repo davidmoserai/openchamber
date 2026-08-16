@@ -1,19 +1,6 @@
 /**
  * Install-state tracking for the ANE dictation model.
- *
- * Download delegates to FluidAudio's own downloader inside the helper
- * process (idempotent: a no-op if its cache already has the model); we
- * record success with our own marker file, mirroring the installed/not
- * -installed state the sherpa models already expose to the UI.
- *
- * Delete removes FluidAudio's on-disk cache directly. FluidAudio's own docs
- * (Manual Model Loading guide) document this cache path as
- * `~/Library/Application Support/FluidAudio/Models/<repo>` on macOS; the
- * actual observed directory name for this model is `parakeet-tdt-0.6b-v3`
- * (verified by inspection), so both that name and the full HuggingFace repo
- * name are tried. If neither exists there's nothing to reclaim — clearing
- * our own marker file is still enough to make the app treat it as
- * not-installed and re-download correctly next time it's selected.
+ * See ../DOCUMENTATION.md for the marker-file/cache-path rationale.
  */
 
 import { spawn } from 'child_process';
@@ -39,10 +26,7 @@ function fluidAudioModelCacheDirs() {
   return FLUIDAUDIO_CACHE_MODEL_DIRNAMES.map((name) => path.join(cacheRoot, name));
 }
 
-/**
- * @param {string} modelsDir
- * @returns {Promise<boolean>}
- */
+/** @param {string} modelsDir */
 export async function isAneSttModelInstalled(modelsDir) {
   try {
     const info = await stat(markerPath(modelsDir));
@@ -52,11 +36,7 @@ export async function isAneSttModelInstalled(modelsDir) {
   }
 }
 
-/**
- * Ensure the ANE model is downloaded (delegates to FluidAudio's own
- * downloader inside the helper process) and record install state.
- * @param {{ modelsDir: string }} options
- */
+/** @param {{ modelsDir: string }} options */
 export async function ensureAneSttModel({ modelsDir }) {
   if (await isAneSttModelInstalled(modelsDir)) {
     return;
@@ -95,11 +75,7 @@ export async function ensureAneSttModel({ modelsDir }) {
   await writeFile(markerPath(modelsDir), new Date().toISOString());
 }
 
-/**
- * Delete the ANE model: FluidAudio's on-disk cache (best-effort, see module
- * docs above) plus our install marker.
- * @param {string} modelsDir
- */
+/** @param {string} modelsDir */
 export async function deleteAneSttModel(modelsDir) {
   await Promise.all(
     fluidAudioModelCacheDirs().map((dir) => rm(dir, { recursive: true, force: true })),
