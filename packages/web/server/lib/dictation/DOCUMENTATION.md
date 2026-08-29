@@ -5,12 +5,29 @@ local text-to-speech. The client streams 16 kHz mono PCM16 chunks (base64)
 over a WebSocket; the server runs the transcription and streams live partial
 transcripts back.
 
-Local TTS (Kokoro via sherpa-onnx OfflineTts) runs in the same worker process
-and is exposed as `POST /api/dictation/tts/speak` (JSON `{text, speakerId?,
-speed?, model?}` → WAV bytes; 503 with `reasonCode` while the model is
-downloading). TTS models live in the same catalog/downloader as STT models
+Local TTS runs two interchangeable engines behind one route,
+`POST /api/dictation/tts/speak` (JSON `{text, speakerId?, speed?, model?,
+refVoiceId?, language?}` → WAV bytes; 503 with `reasonCode` while the model
+is downloading):
+
+- `kokoro-en-v0_19` — sherpa-onnx OfflineTts (native addon), runs in the same
+  forked worker process as STT. English only, fixed voice bank
+  (`speakerId`).
+- `omnivoice-multilingual` — OmniVoice (k2-fsa), 600+ languages with
+  zero-shot voice cloning. No Node/ONNX equivalent exists with cloning
+  across that many languages, so this runs as an isolated **Python** child
+  process instead of a forked Node worker — see `local/omnivoice-manager.js`.
+  Node still owns the process lifecycle, HTTP routes, and all state; Python
+  only performs inference. `refVoiceId` selects a saved reference clip
+  (`local/voice-profiles.js`, `GET/POST/DELETE /api/dictation/tts/voices`);
+  omitting it uses the model's default voice. `language` is an optional ISO
+  639 hint — omitting it lets OmniVoice infer the language from the text.
+
+Both models live in the same catalog/downloader as STT models
 (`local/model-catalog.js` `LOCAL_TTS_MODEL_CATALOG`) and are managed by the
-same status/download/delete routes.
+same status/download/delete routes; `model-downloader.js` branches on
+`type === 'omnivoice'` to delegate install/readiness to
+`omnivoice-manager.js` instead of the generic tar.bz2 archive path.
 
 ## Ownership
 
@@ -36,6 +53,15 @@ same status/download/delete routes.
   recognizer engine and realtime session (throttled re-decode for partials),
   model catalog and downloader. The native `sherpa-onnx-node` addon is only
   ever loaded inside the worker process.
+  - `omnivoice-manager.js` — bootstraps a `uv`-managed Python venv, spawns
+    `omnivoice/omnivoice_server.py` and speaks newline-delimited JSON over
+    its stdio, auto-picks cuda/mps/cpu at sidecar startup, and idle-shuts-down
+    after 10 minutes. A per-call `ensureReady()` timeout only bounds how long
+    *that caller* waits — a slow first-run download/pip-install is never
+    killed for taking too long; it keeps progressing in the background and
+    the next status poll or retry picks up the same in-flight process.
+  - `voice-profiles.js` — saved reference clips (WAV + exact transcript) for
+    OmniVoice cloning, under `<modelsDir>/omnivoice-voices/<id>/`.
 - `audio.js` — PCM16 helpers: format parsing, peak, WAV wrapping, streaming
   linear resampler.
 

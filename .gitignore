@@ -70,3 +70,4 @@ workspaces/
 .worktrees/
 test-results/
 artifacts/
+__pycache__/

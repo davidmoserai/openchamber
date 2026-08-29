@@ -1,0 +1,2 @@
+omnivoice
+huggingface_hub

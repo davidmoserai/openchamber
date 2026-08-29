@@ -82,6 +82,18 @@ export const LOCAL_TTS_MODEL_CATALOG = {
     },
     description: 'Kokoro TTS (English, natural voices)',
   },
+  /**
+   * OmniVoice (k2-fsa) runs as a Python sidecar rather than a sherpa-onnx
+   * archive — it has no `files`/`archiveUrl`, so install/download state is
+   * handled by `../omnivoice-manager.js` instead of `model-downloader.js`'s
+   * generic archive path. See `isLocalTtsModelId`/`getLocalSttModelSpec`
+   * callers, which branch on `type === 'omnivoice'`.
+   */
+  'omnivoice-multilingual': {
+    type: 'omnivoice',
+    files: {},
+    description: 'OmniVoice (600+ languages, zero-shot voice cloning)',
+  },
 };
 
 export const DEFAULT_LOCAL_STT_MODEL = 'parakeet-tdt-0.6b-v2-int8';

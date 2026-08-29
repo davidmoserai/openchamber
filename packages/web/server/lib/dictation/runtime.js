@@ -63,6 +63,8 @@ export function createDictationRuntime({
         model: typeof req.body?.model === 'string' ? req.body.model : undefined,
         speakerId: Number.isInteger(req.body?.speakerId) ? req.body.speakerId : undefined,
         speed: typeof req.body?.speed === 'number' ? req.body.speed : undefined,
+        refVoiceId: typeof req.body?.refVoiceId === 'string' ? req.body.refVoiceId : undefined,
+        language: typeof req.body?.language === 'string' ? req.body.language : undefined,
       });
       if (result.error) {
         res.status(503).json({
@@ -113,6 +115,50 @@ export function createDictationRuntime({
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error?.message || 'Failed to delete model' });
+    }
+  });
+
+  // Saved reference-voice clips for OmniVoice zero-shot cloning.
+  app.get('/api/dictation/tts/voices', async (_req, res) => {
+    try {
+      res.json({ voices: await service.listVoices() });
+    } catch (error) {
+      res.status(500).json({ error: error?.message || 'Failed to list voices' });
+    }
+  });
+
+  app.post('/api/dictation/tts/voices', express.json({ limit: '15mb' }), async (req, res) => {
+    try {
+      const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+      const transcript = typeof req.body?.transcript === 'string' ? req.body.transcript.trim() : '';
+      const audioBase64 = typeof req.body?.audioBase64 === 'string' ? req.body.audioBase64 : '';
+      const language = typeof req.body?.language === 'string' ? req.body.language : undefined;
+      if (!name || !transcript || !audioBase64) {
+        res.status(400).json({ error: 'name, transcript, and audioBase64 are required' });
+        return;
+      }
+      const profile = await service.saveVoice({
+        name,
+        transcript,
+        language,
+        audioBuffer: Buffer.from(audioBase64, 'base64'),
+      });
+      res.json({ voice: profile });
+    } catch (error) {
+      res.status(500).json({ error: error?.message || 'Failed to save voice' });
+    }
+  });
+
+  app.delete('/api/dictation/tts/voices/:voiceId', async (req, res) => {
+    try {
+      const deleted = await service.deleteVoice(req.params.voiceId);
+      if (!deleted) {
+        res.status(404).json({ error: 'Voice not found' });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: error?.message || 'Failed to delete voice' });
     }
   });
 

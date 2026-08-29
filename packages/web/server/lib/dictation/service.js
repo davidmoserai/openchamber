@@ -21,11 +21,20 @@ import {
   LOCAL_TTS_MODEL_CATALOG,
   LOCAL_TTS_MODEL_IDS,
   getLocalSttModelDir,
+  getLocalSttModelSpec,
   isLocalModelId,
   isLocalSttModelId,
   isLocalTtsModelId,
 } from './local/model-catalog.js';
 import { ensureLocalSttModel, isLocalSttModelInstalled } from './local/model-downloader.js';
+import { omniVoiceManager, removeOmniVoiceInstall } from './local/omnivoice-manager.js';
+import {
+  deleteVoiceProfile,
+  getVoiceProfileAudioPath,
+  getVoiceProfileTranscript,
+  listVoiceProfiles,
+  saveVoiceProfile,
+} from './local/voice-profiles.js';
 
 export function createDictationService({ modelsDir }) {
   const workerClient = new DictationWorkerClient();
@@ -220,9 +229,10 @@ export function createDictationService({ modelsDir }) {
   /**
    * Synthesize speech with the local TTS model. Returns WAV bytes, or a
    * readiness error while the model is missing/downloading.
-   * @param {{ text: string, model?: string, speakerId?: number, speed?: number }} options
+   * @param {{ text: string, model?: string, speakerId?: number, speed?: number,
+   *           refVoiceId?: string, language?: string }} options
    */
-  const synthesizeSpeech = async ({ text, model, speakerId, speed }) => {
+  const synthesizeSpeech = async ({ text, model, speakerId, speed, refVoiceId, language }) => {
     const modelId = isLocalTtsModelId(model) ? model : DEFAULT_LOCAL_TTS_MODEL;
     const installed = await isLocalSttModelInstalled(modelsDir, modelId);
     if (!installed) {
@@ -238,10 +248,28 @@ export function createDictationService({ modelsDir }) {
       }
       void startModelDownload(modelId);
       return {
-        error: 'TTS model is downloading',
+        error: `${getLocalSttModelSpec(modelId).type === 'omnivoice' ? 'OmniVoice' : 'TTS'} model is downloading`,
         retryable: true,
         reasonCode: 'model_download_in_progress',
       };
+    }
+
+    if (getLocalSttModelSpec(modelId).type === 'omnivoice') {
+      let refAudioPath;
+      let refText;
+      if (refVoiceId) {
+        refAudioPath = await getVoiceProfileAudioPath(modelsDir, refVoiceId);
+        refText = await getVoiceProfileTranscript(modelsDir, refVoiceId);
+        if (!refAudioPath || !refText) {
+          return { error: 'Selected voice profile was not found', retryable: false, reasonCode: 'voice_not_found' };
+        }
+      }
+      try {
+        const result = await omniVoiceManager.synthesize({ modelsDir, text, refAudioPath, refText, language, speed });
+        return { audio: result.audio, format: result.format };
+      } catch (error) {
+        return { error: error?.message || String(error), retryable: true, reasonCode: 'omnivoice_generation_failed' };
+      }
     }
 
     const result = await workerClient.synthesizeSpeech({
@@ -282,14 +310,30 @@ export function createDictationService({ modelsDir }) {
     if (downloadStates.get(modelId) === 'downloading') {
       return { ok: false, error: 'Model is downloading' };
     }
-    await rm(getLocalSttModelDir(modelsDir, modelId), { recursive: true, force: true });
+    if (getLocalSttModelSpec(modelId).type === 'omnivoice') {
+      await removeOmniVoiceInstall(modelsDir);
+    } else {
+      await rm(getLocalSttModelDir(modelsDir, modelId), { recursive: true, force: true });
+    }
     downloadErrors.delete(modelId);
     return { ok: true };
   };
 
   const shutdown = () => {
     workerClient.shutdown();
+    omniVoiceManager.shutdown();
   };
+
+  /** @returns {Promise<Array<{ id: string, name: string, transcript: string, language?: string, createdAt: string }>>} */
+  const listVoices = () => listVoiceProfiles(modelsDir);
+
+  /**
+   * @param {{ name: string, transcript: string, language?: string, audioBuffer: Buffer }} params
+   */
+  const saveVoice = (params) => saveVoiceProfile({ modelsDir, ...params });
+
+  /** @param {string} id */
+  const deleteVoice = (id) => deleteVoiceProfile(modelsDir, id);
 
   return {
     createSttSession,
@@ -297,6 +341,9 @@ export function createDictationService({ modelsDir }) {
     getStatus,
     requestModelDownload,
     deleteModel,
+    listVoices,
+    saveVoice,
+    deleteVoice,
     shutdown,
   };
 }

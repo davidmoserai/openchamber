@@ -12,6 +12,7 @@ import { pipeline } from 'stream/promises';
 import { spawn } from 'child_process';
 
 import { getLocalSttModelSpec } from './model-catalog.js';
+import { isOmniVoiceInstalled, omniVoiceManager } from './omnivoice-manager.js';
 
 async function hasRequiredFiles(modelDir, requiredFiles) {
   const results = await Promise.all(
@@ -98,6 +99,9 @@ async function isNonEmptyFile(filePath) {
  */
 export async function isLocalSttModelInstalled(modelsDir, modelId) {
   const spec = getLocalSttModelSpec(modelId);
+  if (spec.type === 'omnivoice') {
+    return isOmniVoiceInstalled(modelsDir);
+  }
   return hasRequiredFiles(path.join(modelsDir, spec.extractedDir), spec.requiredFiles);
 }
 
@@ -116,6 +120,18 @@ export async function isLocalSttModelInstalled(modelsDir, modelId) {
  */
 export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }) {
   const spec = getLocalSttModelSpec(modelId);
+  if (spec.type === 'omnivoice') {
+    // Bootstrapping (venv + pip install + model download inside the sidecar)
+    // has no byte-level progress to report; the manager reports text status
+    // via onProgress instead of (downloadedBytes, totalBytes).
+    await omniVoiceManager.ensureReady({
+      modelsDir,
+      timeoutMs: Number.POSITIVE_INFINITY,
+      onProgress: (message) => onProgress?.(null, null, message),
+    });
+    return modelsDir;
+  }
+
   const modelDir = path.join(modelsDir, spec.extractedDir);
   if (await hasRequiredFiles(modelDir, spec.requiredFiles)) {
     return modelDir;

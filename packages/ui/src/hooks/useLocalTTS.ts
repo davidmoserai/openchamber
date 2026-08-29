@@ -14,10 +14,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
 export interface LocalTTSSpeakOptions {
+    /** Local TTS model id (defaults to the server's default, Kokoro) */
+    model?: string;
     /** Kokoro speaker id (0-10) */
     speakerId?: number;
     /** Playback speed multiplier (1.0 = normal) */
     speed?: number;
+    /** OmniVoice: ISO 639 language hint (omit to infer from text) */
+    language?: string;
+    /** OmniVoice: saved voice-profile id to clone from (omit for the default voice) */
+    refVoiceId?: string;
     onStart?: () => void;
     onEnd?: () => void;
     onError?: (error: string) => void;
@@ -177,8 +183,11 @@ export function useLocalTTS(): UseLocalTTSReturn {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     text: chunk,
+                    ...(options?.model ? { model: options.model } : {}),
                     ...(typeof options?.speakerId === 'number' ? { speakerId: options.speakerId } : {}),
                     ...(typeof options?.speed === 'number' ? { speed: options.speed } : {}),
+                    ...(options?.language ? { language: options.language } : {}),
+                    ...(options?.refVoiceId ? { refVoiceId: options.refVoiceId } : {}),
                 }),
                 signal: session.abort.signal,
             });

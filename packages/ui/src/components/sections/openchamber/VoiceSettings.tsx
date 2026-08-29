@@ -31,6 +31,8 @@ import { cn } from '@/lib/utils';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useI18n } from '@/lib/i18n';
 import { useLocalTTS } from '@/hooks/useLocalTTS';
+import { useVoiceRecorder } from '@/hooks/useVoiceRecorder';
+import { toWavBlob, blobToBase64 } from '@/lib/voice/wavEncoder';
 import { disposePreviewAudio } from './voicePreviewAudio';
 
 const LOCAL_STT_MODELS = [
@@ -286,8 +288,14 @@ const KOKORO_VOICE_OPTIONS = [
 ];
 
 const LOCAL_TTS_MODEL_ID = 'kokoro-en-v0_19';
+const OMNIVOICE_MODEL_ID = 'omnivoice-multilingual';
 
-const LocalTtsModelStatus = () => {
+const LOCAL_TTS_ENGINES = [
+    { id: LOCAL_TTS_MODEL_ID, label: 'Kokoro', sizeLabel: '305 MB' },
+    { id: OMNIVOICE_MODEL_ID, label: 'OmniVoice', sizeLabel: '~2.4 GB' },
+] as const;
+
+const LocalTtsModelStatus = ({ modelId, label, sizeLabel }: { modelId: string; label: string; sizeLabel: string }) => {
     const { t } = useI18n();
     const [model, setModel] = useState<DictationModelState | null>(null);
     const [requesting, setRequesting] = useState(false);
@@ -300,7 +308,7 @@ const LocalTtsModelStatus = () => {
             }
             const data = await response.json();
             const entry = Array.isArray(data?.ttsModels)
-                ? data.ttsModels.find((m: DictationModelState) => m.id === LOCAL_TTS_MODEL_ID)
+                ? data.ttsModels.find((m: DictationModelState) => m.id === modelId)
                 : null;
             if (entry) {
                 setModel(entry);
@@ -308,7 +316,7 @@ const LocalTtsModelStatus = () => {
         } catch {
             // Display-only status; keep the previous state on fetch failure.
         }
-    }, []);
+    }, [modelId]);
 
     useEffect(() => {
         void refresh();
@@ -328,8 +336,8 @@ const LocalTtsModelStatus = () => {
         setRequesting(true);
         try {
             const path = method === 'POST'
-                ? `/api/dictation/models/${LOCAL_TTS_MODEL_ID}/download`
-                : `/api/dictation/models/${LOCAL_TTS_MODEL_ID}`;
+                ? `/api/dictation/models/${modelId}/download`
+                : `/api/dictation/models/${modelId}`;
             await runtimeFetch(path, { method });
             await refresh();
         } catch {
@@ -345,8 +353,8 @@ const LocalTtsModelStatus = () => {
 
     return (
         <div className="flex items-center gap-2 py-1.5">
-            <span className="typography-ui-label text-foreground">Kokoro</span>
-            <span className="typography-ui-compact tabular-nums text-muted-foreground">305 MB</span>
+            <span className="typography-ui-label text-foreground">{label}</span>
+            <span className="typography-ui-compact tabular-nums text-muted-foreground">{sizeLabel}</span>
             {model.installed ? (
                 <>
                     <Icon
@@ -393,6 +401,234 @@ const LocalTtsModelStatus = () => {
     );
 };
 
+/**
+ * Curated subset of OmniVoice's 600+ supported languages (full list at
+ * https://github.com/k2-fsa/OmniVoice/blob/master/docs/languages.md). This
+ * covers the common cases in a manageable dropdown; the "Other" field below
+ * accepts any code from the full list as free text.
+ */
+const OMNIVOICE_LANGUAGE_OPTIONS = [
+    { code: '', label: 'Auto (infer from text)' },
+    { code: 'en', label: 'English' },
+    { code: 'de', label: 'German' },
+    { code: 'fr', label: 'French' },
+    { code: 'es', label: 'Spanish' },
+    { code: 'it', label: 'Italian' },
+    { code: 'pt', label: 'Portuguese' },
+    { code: 'nl', label: 'Dutch' },
+    { code: 'ru', label: 'Russian' },
+    { code: 'pl', label: 'Polish' },
+    { code: 'uk', label: 'Ukrainian' },
+    { code: 'cs', label: 'Czech' },
+    { code: 'sv', label: 'Swedish' },
+    { code: 'da', label: 'Danish' },
+    { code: 'no', label: 'Norwegian' },
+    { code: 'fi', label: 'Finnish' },
+    { code: 'el', label: 'Greek' },
+    { code: 'tr', label: 'Turkish' },
+    { code: 'he', label: 'Hebrew' },
+    { code: 'ar', label: 'Arabic' },
+    { code: 'fa', label: 'Persian' },
+    { code: 'hi', label: 'Hindi' },
+    { code: 'bn', label: 'Bengali' },
+    { code: 'ur', label: 'Urdu' },
+    { code: 'ta', label: 'Tamil' },
+    { code: 'te', label: 'Telugu' },
+    { code: 'th', label: 'Thai' },
+    { code: 'vi', label: 'Vietnamese' },
+    { code: 'id', label: 'Indonesian' },
+    { code: 'ms', label: 'Malay' },
+    { code: 'zh', label: 'Chinese' },
+    { code: 'yue', label: 'Cantonese' },
+    { code: 'ja', label: 'Japanese' },
+    { code: 'ko', label: 'Korean' },
+    { code: 'sw', label: 'Swahili' },
+    { code: 'am', label: 'Amharic' },
+    { code: 'yo', label: 'Yoruba' },
+    { code: 'ha', label: 'Hausa' },
+    { code: 'af', label: 'Afrikaans' },
+] as const;
+
+interface VoiceProfile {
+    id: string;
+    name: string;
+    transcript: string;
+    language?: string;
+}
+
+const OmniVoiceVoiceManager = ({
+    selectedVoiceId,
+    onSelectVoice,
+}: {
+    selectedVoiceId: string;
+    onSelectVoice: (voiceId: string) => void;
+}) => {
+    const { t } = useI18n();
+    const [voices, setVoices] = useState<VoiceProfile[]>([]);
+    const [isAdding, setIsAdding] = useState(false);
+    const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+    const [name, setName] = useState('');
+    const [transcript, setTranscript] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const { isRecording, start: startRecording, stop: stopRecording } = useVoiceRecorder();
+
+    const refresh = useCallback(async () => {
+        try {
+            const response = await runtimeFetch('/api/dictation/tts/voices');
+            if (!response.ok) return;
+            const data = await response.json();
+            if (Array.isArray(data?.voices)) {
+                setVoices(data.voices);
+            }
+        } catch {
+            // Display-only; keep previous list on failure.
+        }
+    }, []);
+
+    useEffect(() => {
+        void refresh();
+    }, [refresh]);
+
+    const handleRecordToggle = async () => {
+        setError(null);
+        if (isRecording) {
+            const blob = await stopRecording();
+            if (blob) setRecordedBlob(blob);
+            return;
+        }
+        try {
+            await startRecording();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to start recording');
+        }
+    };
+
+    const handleFileUpload = async (file: File) => {
+        setError(null);
+        try {
+            const wavBlob = await toWavBlob(file);
+            setRecordedBlob(wavBlob);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to process audio file');
+        }
+    };
+
+    const handleSave = async () => {
+        if (!recordedBlob || !name.trim() || !transcript.trim()) {
+            setError('A clip, name, and exact transcript are all required');
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            const audioBase64 = await blobToBase64(recordedBlob);
+            const response = await runtimeFetch('/api/dictation/tts/voices', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name.trim(), transcript: transcript.trim(), audioBase64 }),
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({ error: 'Failed to save voice' }));
+                throw new Error(data.error || 'Failed to save voice');
+            }
+            const data = await response.json();
+            setVoices((prev) => [...prev, data.voice]);
+            onSelectVoice(data.voice.id);
+            setIsAdding(false);
+            setRecordedBlob(null);
+            setName('');
+            setTranscript('');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to save voice');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        try {
+            await runtimeFetch(`/api/dictation/tts/voices/${id}`, { method: 'DELETE' });
+            setVoices((prev) => prev.filter((v) => v.id !== id));
+            if (selectedVoiceId === id) {
+                onSelectVoice('');
+            }
+        } catch {
+            // Best-effort; list refresh on next mount will reconcile.
+        }
+    };
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center gap-2">
+                <Select value={selectedVoiceId || '__default__'} onValueChange={(v) => onSelectVoice(v === '__default__' ? '' : v)}>
+                    <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
+                        <SelectValue placeholder={t('settings.voice.page.omnivoice.defaultVoice')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__default__">{t('settings.voice.page.omnivoice.defaultVoice')}</SelectItem>
+                        {voices.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                {selectedVoiceId && (
+                    <Button size="xs" variant="ghost" onClick={() => handleDelete(selectedVoiceId)} title={t('settings.voice.page.stt.modelDelete')}>
+                        <Icon name="delete-bin" className="h-4 w-4" />
+                    </Button>
+                )}
+                <Button size="xs" variant="ghost" onClick={() => setIsAdding((prev) => !prev)}>
+                    {isAdding ? t('settings.common.actions.cancel') : t('settings.voice.page.omnivoice.cloneVoice')}
+                </Button>
+            </div>
+
+            {isAdding && (
+                <div className="space-y-2 rounded-lg border border-input p-2.5">
+                    <span className={SETTINGS_HELPER_CLASS}>{t('settings.voice.page.omnivoice.cloneHint')}</span>
+                    <div className="flex items-center gap-2">
+                        <Button size="xs" variant={isRecording ? 'default' : 'ghost'} onClick={() => { void handleRecordToggle(); }}>
+                            <Icon name={isRecording ? 'stop' : 'mic'} className="mr-1 h-3.5 w-3.5" />
+                            {isRecording ? t('settings.voice.page.omnivoice.stopRecording') : t('settings.voice.page.omnivoice.record')}
+                        </Button>
+                        <span className={SETTINGS_HELPER_CLASS}>{t('settings.voice.page.omnivoice.orUpload')}</span>
+                        <input
+                            type="file"
+                            accept="audio/*"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void handleFileUpload(file);
+                            }}
+                            className="typography-ui-compact text-muted-foreground"
+                        />
+                        {recordedBlob && (
+                            <Icon name="checkbox-circle" className="h-4 w-4 text-[var(--status-success)]" aria-label={t('settings.voice.page.omnivoice.clipReady')} />
+                        )}
+                    </div>
+                    <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder={t('settings.voice.page.omnivoice.voiceNamePlaceholder')}
+                        className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                    />
+                    <textarea
+                        value={transcript}
+                        onChange={(e) => setTranscript(e.target.value)}
+                        placeholder={t('settings.voice.page.omnivoice.transcriptPlaceholder')}
+                        rows={2}
+                        className="w-full rounded-lg border border-input bg-transparent px-2 py-1.5 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                    />
+                    <Button size="xs" onClick={() => { void handleSave(); }} disabled={saving || !recordedBlob}>
+                        {saving ? <Icon name="loader-4" className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                        {t('settings.voice.page.omnivoice.saveVoice')}
+                    </Button>
+                    {error && <div className="typography-meta text-[var(--status-error)]">{error}</div>}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const OPENAI_VOICE_OPTIONS = [
     { value: 'alloy', label: 'Alloy' },
     { value: 'ash', label: 'Ash' },
@@ -424,6 +660,12 @@ export const VoiceSettings: React.FC = () => {
     const setSayVoice = useConfigStore((state) => state.setSayVoice);
     const localTtsVoiceId = useConfigStore((state) => state.localTtsVoiceId);
     const setLocalTtsVoiceId = useConfigStore((state) => state.setLocalTtsVoiceId);
+    const localTtsModelId = useConfigStore((state) => state.localTtsModelId);
+    const setLocalTtsModelId = useConfigStore((state) => state.setLocalTtsModelId);
+    const omnivoiceLanguage = useConfigStore((state) => state.omnivoiceLanguage);
+    const setOmnivoiceLanguage = useConfigStore((state) => state.setOmnivoiceLanguage);
+    const omnivoiceVoiceId = useConfigStore((state) => state.omnivoiceVoiceId);
+    const setOmnivoiceVoiceId = useConfigStore((state) => state.setOmnivoiceVoiceId);
     const { speak: speakLocalTts, stop: stopLocalTts, isPlaying: isLocalTtsPlaying, error: localTtsError } = useLocalTTS();
 
     const previewLocalVoice = useCallback(() => {
@@ -431,13 +673,23 @@ export const VoiceSettings: React.FC = () => {
             stopLocalTts();
             return;
         }
+        if (localTtsModelId === OMNIVOICE_MODEL_ID) {
+            void speakLocalTts(t('settings.voice.page.preview.omnivoiceLine'), {
+                model: OMNIVOICE_MODEL_ID,
+                language: omnivoiceLanguage || undefined,
+                refVoiceId: omnivoiceVoiceId || undefined,
+                speed: useConfigStore.getState().speechRate,
+            });
+            return;
+        }
         const voiceLabel = KOKORO_VOICE_OPTIONS.find((v) => v.id === localTtsVoiceId)?.label
             ?? String(localTtsVoiceId);
         void speakLocalTts(t('settings.voice.page.preview.voiceLine', { voiceName: voiceLabel }), {
+            model: LOCAL_TTS_MODEL_ID,
             speakerId: localTtsVoiceId,
             speed: useConfigStore.getState().speechRate,
         });
-    }, [isLocalTtsPlaying, localTtsVoiceId, speakLocalTts, stopLocalTts, t]);
+    }, [isLocalTtsPlaying, localTtsVoiceId, localTtsModelId, omnivoiceLanguage, omnivoiceVoiceId, speakLocalTts, stopLocalTts, t]);
     const browserVoice = useConfigStore((state) => state.browserVoice);
     const setBrowserVoice = useConfigStore((state) => state.setBrowserVoice);
     const openaiVoice = useConfigStore((state) => state.openaiVoice);
@@ -957,12 +1209,32 @@ export const VoiceSettings: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Local (Kokoro) TTS model status */}
-                            {voiceProvider === 'local' && <LocalTtsModelStatus />}
+                            {/* Local TTS engine (Kokoro or OmniVoice) */}
+                            {voiceProvider === 'local' && (
+                                <SettingsFieldRow label={t('settings.voice.page.field.engine')}>
+                                    <Select value={localTtsModelId} onValueChange={(v) => setLocalTtsModelId(v as typeof localTtsModelId)}>
+                                        <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {LOCAL_TTS_ENGINES.map((engine) => (
+                                                <SelectItem key={engine.id} value={engine.id}>{engine.label}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </SettingsFieldRow>
+                            )}
+                            {voiceProvider === 'local' && (
+                                <LocalTtsModelStatus
+                                    modelId={localTtsModelId}
+                                    label={LOCAL_TTS_ENGINES.find((e) => e.id === localTtsModelId)?.label ?? ''}
+                                    sizeLabel={LOCAL_TTS_ENGINES.find((e) => e.id === localTtsModelId)?.sizeLabel ?? ''}
+                                />
+                            )}
 
                             {/* Voice Selection */}
                             <SettingsFieldRow label={t('settings.voice.page.field.voice')}>
-                                    {voiceProvider === 'local' && (
+                                    {voiceProvider === 'local' && localTtsModelId === LOCAL_TTS_MODEL_ID && (
                                         <>
                                             <Select
                                                 value={String(localTtsVoiceId)}
@@ -986,6 +1258,32 @@ export const VoiceSettings: React.FC = () => {
                                                 <span className="typography-meta text-[var(--status-error)]">{localTtsError}</span>
                                             ) : null}
                                         </>
+                                    )}
+
+                                    {voiceProvider === 'local' && localTtsModelId === OMNIVOICE_MODEL_ID && (
+                                        <div className="flex w-full flex-col gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <Select value={omnivoiceLanguage} onValueChange={setOmnivoiceLanguage}>
+                                                    <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
+                                                        <SelectValue>
+                                                            {(value) => OMNIVOICE_LANGUAGE_OPTIONS.find((l) => l.code === value)?.label ?? value}
+                                                        </SelectValue>
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {OMNIVOICE_LANGUAGE_OPTIONS.map((l) => (
+                                                            <SelectItem key={l.code || 'auto'} value={l.code}>{l.label}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Button size="xs" variant="ghost" onClick={previewLocalVoice} title={t('settings.voice.page.actions.preview')}>
+                                                    {isLocalTtsPlaying ? <Icon name="stop" className="w-3.5 h-3.5" /> : <Icon name="play" className="w-3.5 h-3.5" />}
+                                                </Button>
+                                            </div>
+                                            <OmniVoiceVoiceManager selectedVoiceId={omnivoiceVoiceId} onSelectVoice={setOmnivoiceVoiceId} />
+                                            {localTtsError ? (
+                                                <span className="typography-meta text-[var(--status-error)]">{localTtsError}</span>
+                                            ) : null}
+                                        </div>
                                     )}
 
                                     {voiceProvider === 'openai' && isOpenAIAvailable && (
