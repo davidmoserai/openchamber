@@ -293,7 +293,7 @@ const QWEN_TTS_MODEL_ID = 'qwen3-tts-multilingual';
 
 const LOCAL_TTS_ENGINES = [
     { id: LOCAL_TTS_MODEL_ID, label: 'Kokoro', sizeLabel: '305 MB' },
-    { id: OMNIVOICE_MODEL_ID, label: 'OmniVoice', sizeLabel: '~2.4 GB' },
+    { id: OMNIVOICE_MODEL_ID, label: 'OmniVoice', sizeLabel: '~750 MB' },
     { id: QWEN_TTS_MODEL_ID, label: 'Qwen3-TTS', sizeLabel: '~1.7 GB' },
 ] as const;
 
