@@ -94,6 +94,16 @@ export const LOCAL_TTS_MODEL_CATALOG = {
     files: {},
     description: 'OmniVoice (600+ languages, zero-shot voice cloning)',
   },
+  /**
+   * Same rationale as omnivoice-multilingual (Python sidecar, not a
+   * sherpa-onnx archive) -- see qwen-tts-manager.js. MLX-native, so it only
+   * runs on Apple Silicon.
+   */
+  'qwen3-tts-multilingual': {
+    type: 'qwen-tts',
+    files: {},
+    description: 'Qwen3-TTS (10 languages, zero-shot voice cloning, MLX-native, Apple Silicon only)',
+  },
 };
 
 export const DEFAULT_LOCAL_STT_MODEL = 'parakeet-tdt-0.6b-v2-int8';

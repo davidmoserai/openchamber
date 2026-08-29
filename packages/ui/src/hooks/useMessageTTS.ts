@@ -61,6 +61,9 @@ export function useMessageTTS(): UseMessageTTSReturn {
     const speechVolume = useConfigStore((state) => state.speechVolume);
     const sayVoice = useConfigStore((state) => state.sayVoice);
     const localTtsVoiceId = useConfigStore((state) => state.localTtsVoiceId);
+    const localTtsModelId = useConfigStore((state) => state.localTtsModelId);
+    const omnivoiceLanguage = useConfigStore((state) => state.omnivoiceLanguage);
+    const omnivoiceVoiceId = useConfigStore((state) => state.omnivoiceVoiceId);
     const browserVoice = useConfigStore((state) => state.browserVoice);
     const openaiVoice = useConfigStore((state) => state.openaiVoice);
     const openaiCompatibleVoice = useConfigStore((state) => state.openaiCompatibleVoice);
@@ -134,9 +137,16 @@ export function useMessageTTS(): UseMessageTTSReturn {
                     onError: () => setIsPlaying(false),
                 });
             } else if (voiceProvider === 'local') {
+                const isCloningCapableEngine = localTtsModelId === 'omnivoice-multilingual' || localTtsModelId === 'qwen3-tts-multilingual';
+                // model must be forwarded explicitly -- omitting it makes the
+                // server fall back to its default (Kokoro, English-only),
+                // silently ignoring the OmniVoice engine picked in Settings.
                 await speakLocalTTS(sanitizedText, {
+                    model: localTtsModelId,
                     speakerId: localTtsVoiceId,
                     speed: speechRate,
+                    language: isCloningCapableEngine ? (omnivoiceLanguage || undefined) : undefined,
+                    refVoiceId: isCloningCapableEngine ? (omnivoiceVoiceId || undefined) : undefined,
                     onEnd: () => setIsPlaying(false),
                     onError: () => setIsPlaying(false),
                 });
@@ -187,6 +197,9 @@ export function useMessageTTS(): UseMessageTTSReturn {
         speakSayTTS,
         speakLocalTTS,
         localTtsVoiceId,
+        localTtsModelId,
+        omnivoiceLanguage,
+        omnivoiceVoiceId,
         stop,
     ]);
     

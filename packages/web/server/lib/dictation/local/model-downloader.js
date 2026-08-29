@@ -13,6 +13,7 @@ import { spawn } from 'child_process';
 
 import { getLocalSttModelSpec } from './model-catalog.js';
 import { isOmniVoiceInstalled, omniVoiceManager } from './omnivoice-manager.js';
+import { isQwenTtsInstalled, qwenTtsManager } from './qwen-tts-manager.js';
 
 async function hasRequiredFiles(modelDir, requiredFiles) {
   const results = await Promise.all(
@@ -102,6 +103,9 @@ export async function isLocalSttModelInstalled(modelsDir, modelId) {
   if (spec.type === 'omnivoice') {
     return isOmniVoiceInstalled(modelsDir);
   }
+  if (spec.type === 'qwen-tts') {
+    return isQwenTtsInstalled(modelsDir);
+  }
   return hasRequiredFiles(path.join(modelsDir, spec.extractedDir), spec.requiredFiles);
 }
 
@@ -125,6 +129,14 @@ export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }) {
     // has no byte-level progress to report; the manager reports text status
     // via onProgress instead of (downloadedBytes, totalBytes).
     await omniVoiceManager.ensureReady({
+      modelsDir,
+      timeoutMs: Number.POSITIVE_INFINITY,
+      onProgress: (message) => onProgress?.(null, null, message),
+    });
+    return modelsDir;
+  }
+  if (spec.type === 'qwen-tts') {
+    await qwenTtsManager.ensureReady({
       modelsDir,
       timeoutMs: Number.POSITIVE_INFINITY,
       onProgress: (message) => onProgress?.(null, null, message),

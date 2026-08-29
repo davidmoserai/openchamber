@@ -1043,7 +1043,7 @@ interface ConfigStore {
     browserVoice: string;
     localTtsVoiceId: number;
     /** Which local TTS engine backs the 'local' voiceProvider. */
-    localTtsModelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual';
+    localTtsModelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual' | 'qwen3-tts-multilingual';
     /** ISO 639 language hint passed to OmniVoice (empty = infer from text). */
     omnivoiceLanguage: string;
     /** Saved voice-profile id to clone from, or '' for OmniVoice's default voice. */
@@ -1075,7 +1075,7 @@ interface ConfigStore {
     setSayVoice: (voice: string) => void;
     setBrowserVoice: (voice: string) => void;
     setLocalTtsVoiceId: (voiceId: number) => void;
-    setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual') => void;
+    setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual' | 'qwen3-tts-multilingual') => void;
     setOmnivoiceLanguage: (language: string) => void;
     setOmnivoiceVoiceId: (voiceId: string) => void;
     setOpenaiVoice: (voice: string) => void;
@@ -1243,7 +1243,7 @@ export const useConfigStore = create<ConfigStore>()(
                 localTtsModelId: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('localTtsModelId');
-                        if (saved === 'kokoro-en-v0_19' || saved === 'omnivoice-multilingual') return saved;
+                        if (saved === 'kokoro-en-v0_19' || saved === 'omnivoice-multilingual' || saved === 'qwen3-tts-multilingual') return saved;
                     }
                     return 'kokoro-en-v0_19';
                 })(),
@@ -2915,7 +2915,7 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual') => {
+                setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual' | 'qwen3-tts-multilingual') => {
                     set({ localTtsModelId: modelId });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('localTtsModelId', modelId);

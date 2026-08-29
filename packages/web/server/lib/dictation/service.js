@@ -28,6 +28,7 @@ import {
 } from './local/model-catalog.js';
 import { ensureLocalSttModel, isLocalSttModelInstalled } from './local/model-downloader.js';
 import { omniVoiceManager, removeOmniVoiceInstall } from './local/omnivoice-manager.js';
+import { qwenTtsManager, removeQwenTtsInstall } from './local/qwen-tts-manager.js';
 import {
   deleteVoiceProfile,
   getVoiceProfileAudioPath,
@@ -230,9 +231,9 @@ export function createDictationService({ modelsDir }) {
    * Synthesize speech with the local TTS model. Returns WAV bytes, or a
    * readiness error while the model is missing/downloading.
    * @param {{ text: string, model?: string, speakerId?: number, speed?: number,
-   *           refVoiceId?: string, language?: string }} options
+   *           refVoiceId?: string, language?: string, voiceSessionId?: string }} options
    */
-  const synthesizeSpeech = async ({ text, model, speakerId, speed, refVoiceId, language }) => {
+  const synthesizeSpeech = async ({ text, model, speakerId, speed, refVoiceId, language, voiceSessionId }) => {
     const modelId = isLocalTtsModelId(model) ? model : DEFAULT_LOCAL_TTS_MODEL;
     const installed = await isLocalSttModelInstalled(modelsDir, modelId);
     if (!installed) {
@@ -247,14 +248,16 @@ export function createDictationService({ modelsDir }) {
         };
       }
       void startModelDownload(modelId);
+      const engineLabel = { omnivoice: 'OmniVoice', 'qwen-tts': 'Qwen3-TTS' }[getLocalSttModelSpec(modelId).type] || 'TTS';
       return {
-        error: `${getLocalSttModelSpec(modelId).type === 'omnivoice' ? 'OmniVoice' : 'TTS'} model is downloading`,
+        error: `${engineLabel} model is downloading`,
         retryable: true,
         reasonCode: 'model_download_in_progress',
       };
     }
 
-    if (getLocalSttModelSpec(modelId).type === 'omnivoice') {
+    const engineType = getLocalSttModelSpec(modelId).type;
+    if (engineType === 'omnivoice' || engineType === 'qwen-tts') {
       let refAudioPath;
       let refText;
       if (refVoiceId) {
@@ -264,11 +267,12 @@ export function createDictationService({ modelsDir }) {
           return { error: 'Selected voice profile was not found', retryable: false, reasonCode: 'voice_not_found' };
         }
       }
+      const manager = engineType === 'omnivoice' ? omniVoiceManager : qwenTtsManager;
       try {
-        const result = await omniVoiceManager.synthesize({ modelsDir, text, refAudioPath, refText, language, speed });
+        const result = await manager.synthesize({ modelsDir, text, refAudioPath, refText, language, speed, voiceSessionId });
         return { audio: result.audio, format: result.format };
       } catch (error) {
-        return { error: error?.message || String(error), retryable: true, reasonCode: 'omnivoice_generation_failed' };
+        return { error: error?.message || String(error), retryable: true, reasonCode: `${engineType.replace('-', '_')}_generation_failed` };
       }
     }
 
@@ -310,8 +314,11 @@ export function createDictationService({ modelsDir }) {
     if (downloadStates.get(modelId) === 'downloading') {
       return { ok: false, error: 'Model is downloading' };
     }
-    if (getLocalSttModelSpec(modelId).type === 'omnivoice') {
+    const engineType = getLocalSttModelSpec(modelId).type;
+    if (engineType === 'omnivoice') {
       await removeOmniVoiceInstall(modelsDir);
+    } else if (engineType === 'qwen-tts') {
+      await removeQwenTtsInstall(modelsDir);
     } else {
       await rm(getLocalSttModelDir(modelsDir, modelId), { recursive: true, force: true });
     }
@@ -322,6 +329,7 @@ export function createDictationService({ modelsDir }) {
   const shutdown = () => {
     workerClient.shutdown();
     omniVoiceManager.shutdown();
+    qwenTtsManager.shutdown();
   };
 
   /** @returns {Promise<Array<{ id: string, name: string, transcript: string, language?: string, createdAt: string }>>} */

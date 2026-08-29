@@ -65,6 +65,7 @@ export function createDictationRuntime({
         speed: typeof req.body?.speed === 'number' ? req.body.speed : undefined,
         refVoiceId: typeof req.body?.refVoiceId === 'string' ? req.body.refVoiceId : undefined,
         language: typeof req.body?.language === 'string' ? req.body.language : undefined,
+        voiceSessionId: typeof req.body?.voiceSessionId === 'string' ? req.body.voiceSessionId : undefined,
       });
       if (result.error) {
         res.status(503).json({

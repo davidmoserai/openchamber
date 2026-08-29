@@ -289,11 +289,46 @@ const KOKORO_VOICE_OPTIONS = [
 
 const LOCAL_TTS_MODEL_ID = 'kokoro-en-v0_19';
 const OMNIVOICE_MODEL_ID = 'omnivoice-multilingual';
+const QWEN_TTS_MODEL_ID = 'qwen3-tts-multilingual';
 
 const LOCAL_TTS_ENGINES = [
     { id: LOCAL_TTS_MODEL_ID, label: 'Kokoro', sizeLabel: '305 MB' },
     { id: OMNIVOICE_MODEL_ID, label: 'OmniVoice', sizeLabel: '~2.4 GB' },
+    { id: QWEN_TTS_MODEL_ID, label: 'Qwen3-TTS', sizeLabel: '~1.7 GB' },
 ] as const;
+
+/**
+ * Qwen3-TTS's `lang_code` parameter takes language *names*, not ISO codes
+ * (unlike OmniVoice) -- see qwen_tts_server.py / mlx-audio's `generate_audio`.
+ */
+const QWEN_LANGUAGE_OPTIONS = [
+    { code: '', label: 'Auto (infer from text)' },
+    { code: 'English', label: 'English' },
+    { code: 'German', label: 'German' },
+    { code: 'French', label: 'French' },
+    { code: 'Spanish', label: 'Spanish' },
+    { code: 'Italian', label: 'Italian' },
+    { code: 'Portuguese', label: 'Portuguese' },
+    { code: 'Russian', label: 'Russian' },
+    { code: 'Chinese', label: 'Chinese' },
+    { code: 'Japanese', label: 'Japanese' },
+    { code: 'Korean', label: 'Korean' },
+] as const;
+
+/** Qwen3-TTS language name -> OMNIVOICE_PREVIEW_TEXT's ISO key, so both
+ * engines' preview buttons can share the same translated sample sentences. */
+const QWEN_LANGUAGE_TO_PREVIEW_KEY: Record<string, string> = {
+    English: 'en',
+    German: 'de',
+    French: 'fr',
+    Spanish: 'es',
+    Italian: 'it',
+    Portuguese: 'pt',
+    Russian: 'ru',
+    Chinese: 'zh',
+    Japanese: 'ja',
+    Korean: 'ko',
+};
 
 const LocalTtsModelStatus = ({ modelId, label, sizeLabel }: { modelId: string; label: string; sizeLabel: string }) => {
     const { t } = useI18n();
@@ -449,6 +484,55 @@ const OMNIVOICE_LANGUAGE_OPTIONS = [
     { code: 'af', label: 'Afrikaans' },
 ] as const;
 
+/**
+ * Preview sentences per language. TTS does not translate — it speaks
+ * whatever text it's given, using that text's own script to pronounce it
+ * correctly. So an English preview line always sounds English no matter
+ * what language is selected; the fix is to preview with text actually
+ * written in that language, same as the real "read message aloud" feature
+ * does automatically for whatever language the message itself is in.
+ */
+const OMNIVOICE_PREVIEW_TEXT: Record<string, string> = {
+    en: 'Hello! This is a preview of OmniVoice.',
+    de: 'Hallo! Das ist eine Vorschau von OmniVoice.',
+    fr: "Bonjour ! Ceci est un aperçu d'OmniVoice.",
+    es: '¡Hola! Esta es una vista previa de OmniVoice.',
+    it: "Ciao! Questa è un'anteprima di OmniVoice.",
+    pt: 'Olá! Esta é uma prévia do OmniVoice.',
+    nl: 'Hallo! Dit is een voorbeeld van OmniVoice.',
+    ru: 'Привет! Это предварительный просмотр OmniVoice.',
+    pl: 'Cześć! To jest podgląd OmniVoice.',
+    uk: 'Привіт! Це попередній перегляд OmniVoice.',
+    cs: 'Ahoj! Toto je ukázka OmniVoice.',
+    sv: 'Hej! Det här är en förhandsvisning av OmniVoice.',
+    da: 'Hej! Dette er en forhåndsvisning af OmniVoice.',
+    no: 'Hei! Dette er en forhåndsvisning av OmniVoice.',
+    fi: 'Hei! Tämä on esikatselu OmniVoicesta.',
+    el: 'Γεια σου! Αυτή είναι μια προεπισκόπηση του OmniVoice.',
+    tr: "Merhaba! Bu OmniVoice'un bir önizlemesi.",
+    he: 'שלום! זוהי תצוגה מקדימה של OmniVoice.',
+    ar: 'مرحباً! هذه معاينة لـ OmniVoice.',
+    fa: 'سلام! این پیش‌نمایشی از OmniVoice است.',
+    hi: 'नमस्ते! यह OmniVoice का पूर्वावलोकन है।',
+    bn: 'হ্যালো! এটি OmniVoice-এর একটি প্রিভিউ।',
+    ur: 'ہیلو! یہ OmniVoice کا پیش منظر ہے۔',
+    ta: 'வணக்கம்! இது OmniVoice இன் முன்னோட்டம்.',
+    te: 'హలో! ఇది OmniVoice యొక్క ప్రివ్యూ.',
+    th: 'สวัสดี! นี่คือตัวอย่างของ OmniVoice',
+    vi: 'Xin chào! Đây là bản xem trước của OmniVoice.',
+    id: 'Halo! Ini adalah pratinjau OmniVoice.',
+    ms: 'Hai! Ini adalah pratonton OmniVoice.',
+    zh: '你好！这是 OmniVoice 的预览。',
+    yue: '你好！呢個係 OmniVoice 嘅預覽。',
+    ja: 'こんにちは！これは OmniVoice のプレビューです。',
+    ko: '안녕하세요! 이것은 OmniVoice의 미리보기입니다.',
+    sw: 'Habari! Huu ni muhtasari wa OmniVoice.',
+    am: 'ሰላም! ይህ የ OmniVoice ቅድመ እይታ ነው።',
+    yo: 'Bawo! Èyí ni àwòrán OmniVoice.',
+    ha: 'Sannu! Wannan gwajin OmniVoice ne.',
+    af: "Hallo! Dit is 'n voorskou van OmniVoice.",
+};
+
 interface VoiceProfile {
     id: string;
     name: string;
@@ -563,7 +647,9 @@ const OmniVoiceVoiceManager = ({
             <div className="flex items-center gap-2">
                 <Select value={selectedVoiceId || '__default__'} onValueChange={(v) => onSelectVoice(v === '__default__' ? '' : v)}>
                     <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
-                        <SelectValue placeholder={t('settings.voice.page.omnivoice.defaultVoice')} />
+                        <SelectValue placeholder={t('settings.voice.page.omnivoice.defaultVoice')}>
+                            {(value) => (value === '__default__' ? t('settings.voice.page.omnivoice.defaultVoice') : voices.find((v) => v.id === value)?.name ?? value)}
+                        </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="__default__">{t('settings.voice.page.omnivoice.defaultVoice')}</SelectItem>
@@ -673,9 +759,17 @@ export const VoiceSettings: React.FC = () => {
             stopLocalTts();
             return;
         }
-        if (localTtsModelId === OMNIVOICE_MODEL_ID) {
-            void speakLocalTts(t('settings.voice.page.preview.omnivoiceLine'), {
-                model: OMNIVOICE_MODEL_ID,
+        if (localTtsModelId === OMNIVOICE_MODEL_ID || localTtsModelId === QWEN_TTS_MODEL_ID) {
+            // Preview with text actually written in the selected language —
+            // TTS pronounces whatever text it's given, it does not translate,
+            // so an English line would sound English regardless of the
+            // language picked here.
+            const previewKey = localTtsModelId === QWEN_TTS_MODEL_ID
+                ? (QWEN_LANGUAGE_TO_PREVIEW_KEY[omnivoiceLanguage] ?? 'en')
+                : omnivoiceLanguage;
+            const previewText = OMNIVOICE_PREVIEW_TEXT[previewKey] ?? OMNIVOICE_PREVIEW_TEXT.en;
+            void speakLocalTts(previewText, {
+                model: localTtsModelId,
                 language: omnivoiceLanguage || undefined,
                 refVoiceId: omnivoiceVoiceId || undefined,
                 speed: useConfigStore.getState().speechRate,
@@ -1209,10 +1303,16 @@ export const VoiceSettings: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Local TTS engine (Kokoro or OmniVoice) */}
+                            {/* Local TTS engine (Kokoro, OmniVoice, or Qwen3-TTS) */}
                             {voiceProvider === 'local' && (
                                 <SettingsFieldRow label={t('settings.voice.page.field.engine')}>
-                                    <Select value={localTtsModelId} onValueChange={(v) => setLocalTtsModelId(v as typeof localTtsModelId)}>
+                                    <Select
+                                        value={localTtsModelId}
+                                        onValueChange={(v) => {
+                                            // SAFETY: v is one of LOCAL_TTS_ENGINES' ids, rendered as this Select's own SelectItem values below.
+                                            setLocalTtsModelId(v as typeof localTtsModelId);
+                                        }}
+                                    >
                                         <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
                                             <SelectValue />
                                         </SelectTrigger>
@@ -1260,17 +1360,20 @@ export const VoiceSettings: React.FC = () => {
                                         </>
                                     )}
 
-                                    {voiceProvider === 'local' && localTtsModelId === OMNIVOICE_MODEL_ID && (
+                                    {voiceProvider === 'local' && (localTtsModelId === OMNIVOICE_MODEL_ID || localTtsModelId === QWEN_TTS_MODEL_ID) && (
                                         <div className="flex w-full flex-col gap-2">
                                             <div className="flex items-center gap-2">
                                                 <Select value={omnivoiceLanguage} onValueChange={setOmnivoiceLanguage}>
                                                     <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
                                                         <SelectValue>
-                                                            {(value) => OMNIVOICE_LANGUAGE_OPTIONS.find((l) => l.code === value)?.label ?? value}
+                                                            {(value) => {
+                                                                const options = localTtsModelId === QWEN_TTS_MODEL_ID ? QWEN_LANGUAGE_OPTIONS : OMNIVOICE_LANGUAGE_OPTIONS;
+                                                                return options.find((l) => l.code === value)?.label ?? value;
+                                                            }}
                                                         </SelectValue>
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {OMNIVOICE_LANGUAGE_OPTIONS.map((l) => (
+                                                        {(localTtsModelId === QWEN_TTS_MODEL_ID ? QWEN_LANGUAGE_OPTIONS : OMNIVOICE_LANGUAGE_OPTIONS).map((l) => (
                                                             <SelectItem key={l.code || 'auto'} value={l.code}>{l.label}</SelectItem>
                                                         ))}
                                                     </SelectContent>
@@ -1279,6 +1382,9 @@ export const VoiceSettings: React.FC = () => {
                                                     {isLocalTtsPlaying ? <Icon name="stop" className="w-3.5 h-3.5" /> : <Icon name="play" className="w-3.5 h-3.5" />}
                                                 </Button>
                                             </div>
+                                            {/* Voice profiles are a shared library across cloning-capable engines,
+                                                not scoped per engine -- any WAV + accurate transcript works as a
+                                                reference regardless of which model does the cloning. */}
                                             <OmniVoiceVoiceManager selectedVoiceId={omnivoiceVoiceId} onSelectVoice={setOmnivoiceVoiceId} />
                                             {localTtsError ? (
                                                 <span className="typography-meta text-[var(--status-error)]">{localTtsError}</span>

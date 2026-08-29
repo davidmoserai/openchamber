@@ -177,17 +177,29 @@ export function useLocalTTS(): UseLocalTTSReturn {
         const session: PlaybackSession = { cancelled: false, abort: new AbortController() };
         sessionRef.current = session;
 
+        // Chunks are pipelined as independent requests for low time-to-first-audio.
+        // The cloning-capable engines (OmniVoice, Qwen3-TTS) have no fixed
+        // speaker without an explicit cloned voice, so they'd otherwise sample
+        // a new random identity per chunk; a shared per-message session id
+        // lets the server pin every chunk after the first to the voice that
+        // first chunk happened to get.
+        const isCloningCapableEngine = options?.model === 'omnivoice-multilingual' || options?.model === 'qwen3-tts-multilingual';
+        const voiceSessionId = isCloningCapableEngine ? crypto.randomUUID() : undefined;
+
         const fetchChunk = async (chunk: string): Promise<ArrayBuffer> => {
             const response = await runtimeFetch('/api/dictation/tts/speak', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     text: chunk,
-                    ...(options?.model ? { model: options.model } : {}),
-                    ...(typeof options?.speakerId === 'number' ? { speakerId: options.speakerId } : {}),
-                    ...(typeof options?.speed === 'number' ? { speed: options.speed } : {}),
-                    ...(options?.language ? { language: options.language } : {}),
-                    ...(options?.refVoiceId ? { refVoiceId: options.refVoiceId } : {}),
+                    // JSON.stringify drops undefined-valued keys, so the server
+                    // sees these fields only when actually provided.
+                    model: options?.model,
+                    speakerId: typeof options?.speakerId === 'number' ? options.speakerId : undefined,
+                    speed: typeof options?.speed === 'number' ? options.speed : undefined,
+                    language: options?.language,
+                    refVoiceId: options?.refVoiceId,
+                    voiceSessionId,
                 }),
                 signal: session.abort.signal,
             });

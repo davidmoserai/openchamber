@@ -13,7 +13,8 @@
 
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { rm } from 'fs/promises';
+import { mkdir, rm, writeFile } from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import readline from 'readline';
 import { fileURLToPath } from 'url';
@@ -32,6 +33,11 @@ const IDLE_SHUTDOWN_MS = 10 * 60 * 1000;
 // Number.POSITIVE_INFINITY instead — see ensureReady().
 const READY_TIMEOUT_MS = 90 * 1000;
 const REQUEST_TIMEOUT_MS = 120 * 1000;
+// How long an auto-derived reference voice (see synthesize()) stays usable
+// after its first chunk. Long enough to cover one message's full chunk
+// sequence, short enough not to accumulate temp files indefinitely.
+const AUTO_REF_SESSION_TTL_MS = 3 * 60 * 1000;
+const AUTO_REF_SESSION_DIR = path.join(os.tmpdir(), 'openchamber-omnivoice-sessions');
 
 export function getVenvDir(modelsDir) {
   return path.join(modelsDir, 'omnivoice-venv');
@@ -121,6 +127,28 @@ export class OmniVoiceManager {
     this.readyPromise = null;
     this.idleTimer = null;
     this.device = null;
+    /** @type {Map<string, { audioPath: string, text: string, timer: NodeJS.Timeout }>} */
+    this.autoRefSessions = new Map();
+  }
+
+  /**
+   * After a chunk generates with no fixed voice (no explicit clone selected),
+   * cache its own output as a reference so later chunks in the same message
+   * clone *that* voice instead of each independently sampling a new random
+   * one. The text passed in is already an exact transcript of this audio.
+   */
+  async _cacheAutoRefSession(voiceSessionId, audioBuffer, text) {
+    await mkdir(AUTO_REF_SESSION_DIR, { recursive: true });
+    const audioPath = path.join(AUTO_REF_SESSION_DIR, `${voiceSessionId}.wav`);
+    await writeFile(audioPath, audioBuffer);
+
+    const timer = setTimeout(() => {
+      this.autoRefSessions.delete(voiceSessionId);
+      rm(audioPath, { force: true }).catch(() => undefined);
+    }, AUTO_REF_SESSION_TTL_MS);
+    timer.unref?.();
+
+    this.autoRefSessions.set(voiceSessionId, { audioPath, text, timer });
   }
 
   _scheduleIdleShutdown() {
@@ -294,15 +322,29 @@ export class OmniVoiceManager {
   /**
    * @param {{ modelsDir: string, text: string, refAudioPath?: string,
    *           refText?: string, language?: string, speed?: number,
-   *           onProgress?: (msg: string) => void }} params
+   *           voiceSessionId?: string, onProgress?: (msg: string) => void }} params
    * @returns {Promise<{ audio: Buffer, format: string }>}
    */
-  async synthesize({ modelsDir, text, refAudioPath, refText, language, speed, onProgress }) {
+  async synthesize({ modelsDir, text, refAudioPath, refText, language, speed, voiceSessionId, onProgress }) {
     await this.ensureReady({ modelsDir, onProgress });
     this._scheduleIdleShutdown();
 
+    // No explicit cloned voice was requested, but this chunk belongs to a
+    // multi-chunk message (voiceSessionId): if an earlier chunk in the same
+    // message already established a voice, reuse it instead of sampling a
+    // new random speaker for this chunk.
+    let effectiveRefAudioPath = refAudioPath;
+    let effectiveRefText = refText;
+    if (!effectiveRefAudioPath && voiceSessionId) {
+      const cached = this.autoRefSessions.get(voiceSessionId);
+      if (cached) {
+        effectiveRefAudioPath = cached.audioPath;
+        effectiveRefText = cached.text;
+      }
+    }
+
     const id = randomUUID();
-    const request = { id, cmd: 'generate', text, refAudioPath, refText, language, speed };
+    const request = { id, cmd: 'generate', text, refAudioPath: effectiveRefAudioPath, refText: effectiveRefText, language, speed };
 
     const response = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -313,10 +355,15 @@ export class OmniVoiceManager {
       this.process.stdin.write(`${JSON.stringify(request)}\n`);
     });
 
-    return {
-      audio: Buffer.from(response.audioBase64, 'base64'),
-      format: 'audio/wav',
-    };
+    const audio = Buffer.from(response.audioBase64, 'base64');
+
+    // This was the first chunk of the message (no ref used, none cached yet)
+    // -- capture its own output as the reference for the chunks after it.
+    if (!refAudioPath && voiceSessionId && !this.autoRefSessions.has(voiceSessionId)) {
+      await this._cacheAutoRefSession(voiceSessionId, audio, text);
+    }
+
+    return { audio, format: 'audio/wav' };
   }
 
   shutdown() {
