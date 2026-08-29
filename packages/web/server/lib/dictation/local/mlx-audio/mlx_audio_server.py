@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Qwen3-TTS (MLX) inference sidecar.
+Generic mlx-audio inference sidecar -- works for any mlx-audio TTS model
+(Qwen3-TTS, OmniVoice-MLX, or future additions), selected by the Hugging
+Face repo id passed as argv[1]. This is what lets ../mlx-audio-manager.js
+be a single generic manager rather than one near-duplicate file per model.
 
-Same newline-delimited JSON protocol as ../omnivoice/omnivoice_server.py, so
-../qwen-tts-manager.js can reuse the same manager logic:
+Same newline-delimited JSON protocol as the (removed) OmniVoice/Qwen3-TTS
+PyTorch-era sidecars:
 
   stdin  (per line): {"id": str, "cmd": "generate", "text": str,
                       "refAudioPath"?: str, "refText"?: str,
@@ -13,11 +16,8 @@ Same newline-delimited JSON protocol as ../omnivoice/omnivoice_server.py, so
                    | {"id": str, "ok": false, "error": str}
 
 Startup status lines: {"event": "loading"}, {"event": "ready", "device": "mlx"},
-{"event": "error", "error": str}.
-
-Unlike OmniVoice (PyTorch, needs explicit cuda/mps/cpu selection), MLX only
-targets Apple Silicon and picks its own device automatically -- there is no
-device_map to choose here.
+{"event": "error", "error": str}. MLX only targets Apple Silicon and has no
+device_map to choose -- there is nothing to select here.
 """
 
 import base64
@@ -26,13 +26,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-MODEL_ID = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit"
-
 def emit(payload):
     sys.stdout.write(json.dumps(payload) + "\n")
     sys.stdout.flush()
 
 def main():
+    if len(sys.argv) < 2:
+        emit({"event": "error", "error": "Missing required model repo argument"})
+        sys.exit(1)
+    model_id = sys.argv[1]
+
     try:
         from mlx_audio.tts.generate import generate_audio
         from mlx_audio.tts.utils import load_model
@@ -43,14 +46,14 @@ def main():
     emit({"event": "loading"})
 
     try:
-        model = load_model(MODEL_ID)
+        model = load_model(model_id)
     except Exception as error:  # noqa: BLE001
-        emit({"event": "error", "error": f"Failed to load Qwen3-TTS model: {error}"})
+        emit({"event": "error", "error": f"Failed to load {model_id}: {error}"})
         sys.exit(1)
 
     emit({"event": "ready", "device": "mlx"})
 
-    with tempfile.TemporaryDirectory(prefix="qwen-tts-sidecar-") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="mlx-audio-sidecar-") as tmp_dir:
         for line in sys.stdin:
             line = line.strip()
             if not line:

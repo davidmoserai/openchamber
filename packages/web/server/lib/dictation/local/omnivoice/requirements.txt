@@ -1,2 +1,0 @@
-omnivoice
-huggingface_hub

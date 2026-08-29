@@ -5,29 +5,40 @@ local text-to-speech. The client streams 16 kHz mono PCM16 chunks (base64)
 over a WebSocket; the server runs the transcription and streams live partial
 transcripts back.
 
-Local TTS runs two interchangeable engines behind one route,
+Local TTS runs three interchangeable engines behind one route,
 `POST /api/dictation/tts/speak` (JSON `{text, speakerId?, speed?, model?,
-refVoiceId?, language?}` → WAV bytes; 503 with `reasonCode` while the model
-is downloading):
+refVoiceId?, language?, voiceSessionId?}` → WAV bytes; 503 with `reasonCode`
+while the model is downloading):
 
 - `kokoro-en-v0_19` — sherpa-onnx OfflineTts (native addon), runs in the same
   forked worker process as STT. English only, fixed voice bank
   (`speakerId`).
-- `omnivoice-multilingual` — OmniVoice (k2-fsa), 600+ languages with
-  zero-shot voice cloning. No Node/ONNX equivalent exists with cloning
-  across that many languages, so this runs as an isolated **Python** child
-  process instead of a forked Node worker — see `local/omnivoice-manager.js`.
-  Node still owns the process lifecycle, HTTP routes, and all state; Python
-  only performs inference. `refVoiceId` selects a saved reference clip
-  (`local/voice-profiles.js`, `GET/POST/DELETE /api/dictation/tts/voices`);
-  omitting it uses the model's default voice. `language` is an optional ISO
-  639 hint — omitting it lets OmniVoice infer the language from the text.
+- `omnivoice-multilingual` and `qwen3-tts-multilingual` — zero-shot
+  voice-cloning models (OmniVoice: 600+ languages; Qwen3-TTS: 10 languages,
+  meaningfully faster). No Node/ONNX equivalent exists with cloning at this
+  breadth, so both run as isolated **Python** (mlx-audio / MLX) child
+  processes instead of a forked Node worker — see `local/mlx-audio-manager.js`.
+  MLX only targets Apple Silicon, so these two are Mac-only. Node still owns
+  the process lifecycle, HTTP routes, and all state; Python only performs
+  inference. `refVoiceId` selects a saved reference clip (`local/voice-profiles.js`,
+  `GET/POST/DELETE /api/dictation/tts/voices`); omitting it uses the model's
+  default voice, in which case a shared `voiceSessionId` across a message's
+  pipelined chunks keeps every chunk cloning whichever voice the first chunk
+  happened to sample, instead of a new random speaker per chunk (see
+  `MlxAudioManager.synthesize`'s auto-reference-session cache). `language` is
+  an optional hint — omitting it lets the model infer the language from the
+  text; OmniVoice takes ISO 639 codes, Qwen3-TTS takes language names
+  ("German"), enforced by the two engines' respective option lists in
+  `packages/ui/src/components/sections/openchamber/VoiceSettings.tsx`.
 
-Both models live in the same catalog/downloader as STT models
+All three models live in the same catalog/downloader as STT models
 (`local/model-catalog.js` `LOCAL_TTS_MODEL_CATALOG`) and are managed by the
 same status/download/delete routes; `model-downloader.js` branches on
-`type === 'omnivoice'` to delegate install/readiness to
-`omnivoice-manager.js` instead of the generic tar.bz2 archive path.
+`type === 'mlx-audio'` to delegate install/readiness to
+`getMlxAudioManager(spec.modelRepo)` instead of the generic tar.bz2 archive
+path. The two mlx-audio models share one Python venv (`mlx-audio` is their
+only dependency) but each gets its own long-lived sidecar process, since
+each keeps a different model resident in memory.
 
 ## Ownership
 
@@ -53,15 +64,19 @@ same status/download/delete routes; `model-downloader.js` branches on
   recognizer engine and realtime session (throttled re-decode for partials),
   model catalog and downloader. The native `sherpa-onnx-node` addon is only
   ever loaded inside the worker process.
-  - `omnivoice-manager.js` — bootstraps a `uv`-managed Python venv, spawns
-    `omnivoice/omnivoice_server.py` and speaks newline-delimited JSON over
-    its stdio, auto-picks cuda/mps/cpu at sidecar startup, and idle-shuts-down
-    after 10 minutes. A per-call `ensureReady()` timeout only bounds how long
-    *that caller* waits — a slow first-run download/pip-install is never
-    killed for taking too long; it keeps progressing in the background and
-    the next status poll or retry picks up the same in-flight process.
+  - `mlx-audio-manager.js` — generic manager for any mlx-audio-backed model:
+    bootstraps a `uv`-managed Python venv (shared across models — `mlx-audio`
+    is the only dependency), spawns `mlx-audio/mlx_audio_server.py` per
+    model repo (passed as argv[1]) and speaks newline-delimited JSON over its
+    stdio, and idle-shuts-down each sidecar after 10 minutes. A per-call
+    `ensureReady()` timeout only bounds how long *that caller* waits — a slow
+    first-run download/pip-install is never killed for taking too long; it
+    keeps progressing in the background and the next status poll or retry
+    picks up the same in-flight process. `getMlxAudioManager(modelRepo)`
+    caches one manager instance per distinct model.
   - `voice-profiles.js` — saved reference clips (WAV + exact transcript) for
-    OmniVoice cloning, under `<modelsDir>/omnivoice-voices/<id>/`.
+    cloning, under `<modelsDir>/omnivoice-voices/<id>/`. Shared across both
+    mlx-audio models, not scoped per engine.
 - `audio.js` — PCM16 helpers: format parsing, peak, WAV wrapping, streaming
   linear resampler.
 

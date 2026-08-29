@@ -1,13 +1,19 @@
 /**
- * Manages the Qwen3-TTS (MLX) Python inference sidecar: one-time environment
+ * Manages mlx-audio Python inference sidecars: one-time environment
  * bootstrap (uv venv + pip install), lazy spawn, newline-delimited JSON
  * request/response over stdio, and idle shutdown.
  *
- * Structurally identical to omnivoice-manager.js (same protocol, same
- * auto-reference-voice-session mechanism for pipelined-chunk consistency),
- * but the bootstrap is simpler: MLX has no separate device_map to pick and
- * no PyTorch/CUDA wheel selection -- it only targets Apple Silicon and
- * handles that automatically. `mlx-audio` is the only dependency.
+ * Generic across every mlx-audio-backed local TTS model (currently
+ * Qwen3-TTS and OmniVoice-MLX) -- they all need the exact same single
+ * dependency (`mlx-audio`) and the exact same sidecar protocol, differing
+ * only in which Hugging Face repo gets loaded. One shared venv is
+ * bootstrapped once; each distinct model gets its own long-lived Python
+ * process (via getMlxAudioManager(modelRepo)) since each has its own model
+ * resident in memory.
+ *
+ * MLX only targets Apple Silicon and has no device_map to choose, unlike
+ * the PyTorch-based sidecars this replaced -- there is no cuda/mps/cpu
+ * selection to make here.
  */
 
 import { spawn } from 'child_process';
@@ -20,36 +26,44 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SIDECAR_DIR = path.join(__dirname, 'qwen-tts');
-const SIDECAR_SCRIPT = path.join(SIDECAR_DIR, 'qwen_tts_server.py');
+const SIDECAR_DIR = path.join(__dirname, 'mlx-audio');
+const SIDECAR_SCRIPT = path.join(SIDECAR_DIR, 'mlx_audio_server.py');
 const REQUIREMENTS_FILE = path.join(SIDECAR_DIR, 'requirements.txt');
 
 const IDLE_SHUTDOWN_MS = 10 * 60 * 1000;
-// See omnivoice-manager.js's READY_TIMEOUT_MS for why this only bounds a
-// single caller's patience, not the underlying bootstrap/download.
+// See omnivoice-manager.js's (removed) equivalent comment: this only bounds
+// a single caller's patience, not the underlying bootstrap/download, which
+// is intentionally never killed for taking too long.
 const READY_TIMEOUT_MS = 90 * 1000;
 const REQUEST_TIMEOUT_MS = 120 * 1000;
 const AUTO_REF_SESSION_TTL_MS = 3 * 60 * 1000;
-const AUTO_REF_SESSION_DIR = path.join(os.tmpdir(), 'openchamber-qwen-tts-sessions');
+const AUTO_REF_SESSION_DIR = path.join(os.tmpdir(), 'openchamber-mlx-audio-sessions');
 
-export function getVenvDir(modelsDir) {
-  return path.join(modelsDir, 'qwen-tts-venv');
+/** One shared venv: `mlx-audio` is the only dependency, regardless of model. */
+function getVenvDir(modelsDir) {
+  return path.join(modelsDir, 'mlx-audio-venv');
 }
 
 function getVenvPython(modelsDir) {
   return path.join(getVenvDir(modelsDir), process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 }
 
-function getMarkerFile(modelsDir) {
-  return path.join(getVenvDir(modelsDir), '.ready');
+function sanitizeForFilename(value) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+/** Per-model marker, since bootstrap is shared but "has this specific model loaded successfully" is not. */
+function getMarkerFile(modelsDir, modelRepo) {
+  return path.join(getVenvDir(modelsDir), `.ready-${sanitizeForFilename(modelRepo)}`);
 }
 
 /**
  * @param {string} modelsDir
- * @returns {boolean} true once the sidecar has reported "ready" at least once.
+ * @param {string} modelRepo
+ * @returns {boolean} true once this model's sidecar has reported "ready" at least once.
  */
-export function isQwenTtsInstalled(modelsDir) {
-  return existsSync(getMarkerFile(modelsDir)) && existsSync(getVenvPython(modelsDir));
+export function isMlxAudioModelInstalled(modelsDir, modelRepo) {
+  return existsSync(getMarkerFile(modelsDir, modelRepo)) && existsSync(getVenvPython(modelsDir));
 }
 
 function runCommand(command, args, { onLine } = {}) {
@@ -63,7 +77,7 @@ function runCommand(command, args, { onLine } = {}) {
     });
     child.on('error', (error) => {
       if (command === 'uv' && error.code === 'ENOENT') {
-        reject(new Error('uv is required to run Qwen3-TTS locally. Install it from https://docs.astral.sh/uv/getting-started/installation/ and try again.'));
+        reject(new Error('uv is required to run local mlx-audio models. Install it from https://docs.astral.sh/uv/getting-started/installation/ and try again.'));
         return;
       }
       reject(error);
@@ -92,8 +106,10 @@ async function bootstrapVenv(modelsDir, onProgress) {
   await runCommand('uv', ['pip', 'install', '--python', venvPython, '-r', REQUIREMENTS_FILE], { onLine: onProgress });
 }
 
-export class QwenTtsManager {
-  constructor() {
+export class MlxAudioManager {
+  /** @param {string} modelRepo Hugging Face repo id, e.g. "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit". */
+  constructor(modelRepo) {
+    this.modelRepo = modelRepo;
     /** @type {import('child_process').ChildProcess | null} */
     this.process = null;
     this.rl = null;
@@ -107,10 +123,15 @@ export class QwenTtsManager {
     this.autoRefSessions = new Map();
   }
 
-  /** See OmniVoiceManager._cacheAutoRefSession -- identical purpose. */
+  /**
+   * After a chunk generates with no fixed voice (no explicit clone selected),
+   * cache its own output as a reference so later chunks in the same message
+   * clone *that* voice instead of each independently sampling a new random
+   * one. The text passed in is already an exact transcript of this audio.
+   */
   async _cacheAutoRefSession(voiceSessionId, audioBuffer, text) {
     await mkdir(AUTO_REF_SESSION_DIR, { recursive: true });
-    const audioPath = path.join(AUTO_REF_SESSION_DIR, `${voiceSessionId}.wav`);
+    const audioPath = path.join(AUTO_REF_SESSION_DIR, `${sanitizeForFilename(this.modelRepo)}-${voiceSessionId}.wav`);
     await writeFile(audioPath, audioBuffer);
 
     const timer = setTimeout(() => {
@@ -148,7 +169,7 @@ export class QwenTtsManager {
         this._failAllPending(new Error(message.error));
       }
       if (message.event !== 'error') {
-        onProgress?.('Loading Qwen3-TTS model');
+        onProgress?.(`Loading ${this.modelRepo}`);
       }
       return;
     }
@@ -162,7 +183,7 @@ export class QwenTtsManager {
     if (message.ok) {
       pending.resolve(message);
     } else {
-      pending.reject(new Error(message.error || 'Qwen3-TTS generation failed'));
+      pending.reject(new Error(message.error || `${this.modelRepo} generation failed`));
     }
   }
 
@@ -174,19 +195,25 @@ export class QwenTtsManager {
     this.pending.clear();
   }
 
-  /** See OmniVoiceManager._bootstrapAndSpawn -- identical structure. */
+  /**
+   * Spawns the sidecar and waits for it to report readiness. Has no internal
+   * timeout: a slow download is not a failure, so this only settles on a
+   * genuine "ready" event or a real process error/exit. Runs at most once —
+   * concurrent/later calls share `this.readyPromise`.
+   */
   _bootstrapAndSpawn(modelsDir, onProgress) {
     return (async () => {
       await bootstrapVenv(modelsDir, onProgress);
 
       const venvPython = getVenvPython(modelsDir);
-      const child = spawn(venvPython, [SIDECAR_SCRIPT], {
+      const child = spawn(venvPython, [SIDECAR_SCRIPT, this.modelRepo], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,
           PYTHONUNBUFFERED: '1',
-          // Same Xet instability seen with OmniVoice's downloads applies
-          // here too -- huggingface_hub is the download path either way.
+          // Xet chunked-transfer can fall into a low, unstable concurrency
+          // state on constrained/proxied networks; plain resumable HTTP is
+          // slower on a fast link but far more reliable everywhere else.
           HF_HUB_DISABLE_XET: '1',
         },
       });
@@ -208,7 +235,7 @@ export class QwenTtsManager {
             this.rl.off('line', onLine);
             reject(new Error(message.error));
           } else {
-            onProgress?.('Loading Qwen3-TTS model (first run downloads ~1.7 GB — this keeps running in the background even if a request times out)');
+            onProgress?.(`Loading ${this.modelRepo} (first run downloads the model — this keeps running in the background even if a request times out)`);
           }
         };
         this.rl.on('line', onLine);
@@ -217,7 +244,7 @@ export class QwenTtsManager {
         child.on('error', reject);
         child.on('exit', (code) => {
           if (code !== 0) {
-            reject(new Error(`Qwen3-TTS sidecar exited during startup (code ${code})`));
+            reject(new Error(`mlx-audio sidecar (${this.modelRepo}) exited during startup (code ${code})`));
           }
         });
       });
@@ -225,13 +252,13 @@ export class QwenTtsManager {
       this.rl.removeAllListeners('line');
       this.rl.on('line', (line) => this._handleLine(line, onProgress));
       child.on('exit', () => {
-        this._failAllPending(new Error('Qwen3-TTS sidecar exited unexpectedly'));
+        this._failAllPending(new Error(`mlx-audio sidecar (${this.modelRepo}) exited unexpectedly`));
         this.process = null;
         this.rl = null;
         this.readyPromise = null;
       });
 
-      writeFileSync(getMarkerFile(modelsDir), new Date().toISOString());
+      writeFileSync(getMarkerFile(modelsDir, this.modelRepo), new Date().toISOString());
       this.device = readyResult.device;
       this._scheduleIdleShutdown();
       return readyResult;
@@ -242,7 +269,7 @@ export class QwenTtsManager {
     });
   }
 
-  /** See OmniVoiceManager.ensureReady -- identical semantics. */
+  /** timeoutMs bounds only how long *this call* waits -- see the class doc comment. */
   async ensureReady({ modelsDir, onProgress, timeoutMs = READY_TIMEOUT_MS }) {
     if (!this.readyPromise) {
       this.readyPromise = this._bootstrapAndSpawn(modelsDir, onProgress);
@@ -255,7 +282,7 @@ export class QwenTtsManager {
     let timer;
     const callerTimeout = new Promise((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error('Still downloading/loading Qwen3-TTS — it is progressing in the background, retry shortly')),
+        () => reject(new Error(`Still downloading/loading ${this.modelRepo} — it is progressing in the background, retry shortly`)),
         timeoutMs,
       );
     });
@@ -293,7 +320,7 @@ export class QwenTtsManager {
     const response = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error('Qwen3-TTS generation timed out'));
+        reject(new Error(`${this.modelRepo} generation timed out`));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
       this.process.stdin.write(`${JSON.stringify(request)}\n`);
@@ -313,7 +340,7 @@ export class QwenTtsManager {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
-    this._failAllPending(new Error('Qwen3-TTS sidecar shut down'));
+    this._failAllPending(new Error(`mlx-audio sidecar (${this.modelRepo}) shut down`));
     this.rl?.removeAllListeners();
     this.rl?.close();
     this.rl = null;
@@ -325,14 +352,36 @@ export class QwenTtsManager {
   }
 }
 
-/** Single shared manager: both the status/download routes and the speak
- * route must talk to the same running sidecar process. */
-export const qwenTtsManager = new QwenTtsManager();
+/** One manager instance per distinct model repo, since each keeps its own
+ * process with its own model resident in memory; the venv/dependencies
+ * underneath are shared. */
+const managers = new Map();
+
+/** @param {string} modelRepo */
+export function getMlxAudioManager(modelRepo) {
+  let manager = managers.get(modelRepo);
+  if (!manager) {
+    manager = new MlxAudioManager(modelRepo);
+    managers.set(modelRepo, manager);
+  }
+  return manager;
+}
+
+export function shutdownAllMlxAudioManagers() {
+  for (const manager of managers.values()) {
+    manager.shutdown();
+  }
+}
 
 /**
+ * Removing a model only clears its own "ready" marker (forcing a fresh
+ * ensureReady() on next use) -- the shared venv is left alone since other
+ * mlx-audio models may still depend on it, and the actual weights live in
+ * the Hugging Face cache (~/.cache/huggingface), outside modelsDir entirely.
  * @param {string} modelsDir
+ * @param {string} modelRepo
  */
-export async function removeQwenTtsInstall(modelsDir) {
-  qwenTtsManager.shutdown();
-  await rm(getVenvDir(modelsDir), { recursive: true, force: true });
+export async function removeMlxAudioModel(modelsDir, modelRepo) {
+  managers.get(modelRepo)?.shutdown();
+  await rm(getMarkerFile(modelsDir, modelRepo), { force: true });
 }
