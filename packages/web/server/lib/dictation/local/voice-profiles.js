@@ -1,8 +1,8 @@
 /**
- * Saved reference-voice clips for OmniVoice zero-shot cloning. Each profile
- * is a short WAV sample plus its exact transcript (both are required by
- * OmniVoice's `ref_audio`/`ref_text` cloning inputs) stored under
- * `<modelsDir>/omnivoice-voices/<id>/`.
+ * Saved reference-voice clips for zero-shot cloning (Qwen3-TTS). Each
+ * profile is a short WAV sample plus its exact transcript (both are
+ * required by the model's `ref_audio`/`ref_text` cloning inputs) stored
+ * under `<modelsDir>/cloned-voices/<id>/`.
  */
 
 import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises';
@@ -10,7 +10,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 
 function voicesDir(modelsDir) {
-  return path.join(modelsDir, 'omnivoice-voices');
+  return path.join(modelsDir, 'cloned-voices');
 }
 
 function profileDir(modelsDir, id) {

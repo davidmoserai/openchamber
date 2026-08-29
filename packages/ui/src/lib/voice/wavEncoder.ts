@@ -1,7 +1,7 @@
 /**
  * Encodes a decoded AudioBuffer as a 16-bit PCM WAV Blob. Used to normalize
  * whatever format the browser records/uploads (webm/opus, mp4, mp3, ...)
- * into plain WAV before it's sent to the server, so OmniVoice's reference
+ * into plain WAV before it's sent to the server, so cloning reference
  * audio never depends on a server-side ffmpeg install.
  */
 export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {

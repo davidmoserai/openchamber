@@ -3,17 +3,18 @@
  * bootstrap (uv venv + pip install), lazy spawn, newline-delimited JSON
  * request/response over stdio, and idle shutdown.
  *
- * Generic across every mlx-audio-backed local TTS model (currently
- * Qwen3-TTS and OmniVoice-MLX) -- they all need the exact same single
- * dependency (`mlx-audio`) and the exact same sidecar protocol, differing
- * only in which Hugging Face repo gets loaded. One shared venv is
- * bootstrapped once; each distinct model gets its own long-lived Python
- * process (via getMlxAudioManager(modelRepo)) since each has its own model
- * resident in memory.
+ * Generic across any mlx-audio-backed local TTS model -- they all need the
+ * exact same single dependency (`mlx-audio`) and the exact same sidecar
+ * protocol, differing only in which Hugging Face repo gets loaded. One
+ * shared venv is bootstrapped once; each distinct model gets its own
+ * long-lived Python process (via getMlxAudioManager(modelRepo)) since each
+ * has its own model resident in memory. Currently only Qwen3-TTS uses this
+ * (OmniVoice-MLX was evaluated and removed in favor of it), but the
+ * generic shape means adding another mlx-audio model back is just a new
+ * model-catalog.js entry.
  *
  * MLX only targets Apple Silicon and has no device_map to choose, unlike
- * the PyTorch-based sidecars this replaced -- there is no cuda/mps/cpu
- * selection to make here.
+ * PyTorch -- there is no cuda/mps/cpu selection to make here.
  */
 
 import { spawn } from 'child_process';
@@ -31,9 +32,9 @@ const SIDECAR_SCRIPT = path.join(SIDECAR_DIR, 'mlx_audio_server.py');
 const REQUIREMENTS_FILE = path.join(SIDECAR_DIR, 'requirements.txt');
 
 const IDLE_SHUTDOWN_MS = 10 * 60 * 1000;
-// See omnivoice-manager.js's (removed) equivalent comment: this only bounds
-// a single caller's patience, not the underlying bootstrap/download, which
-// is intentionally never killed for taking too long.
+// This only bounds a single caller's patience, not the underlying
+// bootstrap/download, which is intentionally never killed for taking too
+// long -- see ensureReady() below.
 const READY_TIMEOUT_MS = 90 * 1000;
 const REQUEST_TIMEOUT_MS = 120 * 1000;
 const AUTO_REF_SESSION_TTL_MS = 3 * 60 * 1000;

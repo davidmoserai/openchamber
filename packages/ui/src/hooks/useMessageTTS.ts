@@ -62,8 +62,8 @@ export function useMessageTTS(): UseMessageTTSReturn {
     const sayVoice = useConfigStore((state) => state.sayVoice);
     const localTtsVoiceId = useConfigStore((state) => state.localTtsVoiceId);
     const localTtsModelId = useConfigStore((state) => state.localTtsModelId);
-    const omnivoiceLanguage = useConfigStore((state) => state.omnivoiceLanguage);
-    const omnivoiceVoiceId = useConfigStore((state) => state.omnivoiceVoiceId);
+    const qwenTtsLanguage = useConfigStore((state) => state.qwenTtsLanguage);
+    const qwenTtsVoiceId = useConfigStore((state) => state.qwenTtsVoiceId);
     const browserVoice = useConfigStore((state) => state.browserVoice);
     const openaiVoice = useConfigStore((state) => state.openaiVoice);
     const openaiCompatibleVoice = useConfigStore((state) => state.openaiCompatibleVoice);
@@ -137,16 +137,16 @@ export function useMessageTTS(): UseMessageTTSReturn {
                     onError: () => setIsPlaying(false),
                 });
             } else if (voiceProvider === 'local') {
-                const isCloningCapableEngine = localTtsModelId === 'omnivoice-multilingual' || localTtsModelId === 'qwen3-tts-multilingual';
+                const isCloningCapableEngine = localTtsModelId === 'qwen3-tts-multilingual';
                 // model must be forwarded explicitly -- omitting it makes the
                 // server fall back to its default (Kokoro, English-only),
-                // silently ignoring the OmniVoice engine picked in Settings.
+                // silently ignoring the engine picked in Settings.
                 await speakLocalTTS(sanitizedText, {
                     model: localTtsModelId,
                     speakerId: localTtsVoiceId,
                     speed: speechRate,
-                    language: isCloningCapableEngine ? (omnivoiceLanguage || undefined) : undefined,
-                    refVoiceId: isCloningCapableEngine ? (omnivoiceVoiceId || undefined) : undefined,
+                    language: isCloningCapableEngine ? (qwenTtsLanguage || undefined) : undefined,
+                    refVoiceId: isCloningCapableEngine ? (qwenTtsVoiceId || undefined) : undefined,
                     onEnd: () => setIsPlaying(false),
                     onError: () => setIsPlaying(false),
                 });
@@ -198,8 +198,8 @@ export function useMessageTTS(): UseMessageTTSReturn {
         speakLocalTTS,
         localTtsVoiceId,
         localTtsModelId,
-        omnivoiceLanguage,
-        omnivoiceVoiceId,
+        qwenTtsLanguage,
+        qwenTtsVoiceId,
         stop,
     ]);
     

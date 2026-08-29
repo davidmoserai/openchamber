@@ -1043,11 +1043,11 @@ interface ConfigStore {
     browserVoice: string;
     localTtsVoiceId: number;
     /** Which local TTS engine backs the 'local' voiceProvider. */
-    localTtsModelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual' | 'qwen3-tts-multilingual';
-    /** ISO 639 language hint passed to OmniVoice (empty = infer from text). */
-    omnivoiceLanguage: string;
-    /** Saved voice-profile id to clone from, or '' for OmniVoice's default voice. */
-    omnivoiceVoiceId: string;
+    localTtsModelId: 'kokoro-en-v0_19' | 'qwen3-tts-multilingual';
+    /** Language hint passed to Qwen3-TTS (empty = infer from text). */
+    qwenTtsLanguage: string;
+    /** Saved voice-profile id to clone from, or '' for Qwen3-TTS's default voice. */
+    qwenTtsVoiceId: string;
     openaiVoice: string;
     openaiApiKey: string;
     openaiCompatibleUrl: string;
@@ -1075,9 +1075,9 @@ interface ConfigStore {
     setSayVoice: (voice: string) => void;
     setBrowserVoice: (voice: string) => void;
     setLocalTtsVoiceId: (voiceId: number) => void;
-    setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual' | 'qwen3-tts-multilingual') => void;
-    setOmnivoiceLanguage: (language: string) => void;
-    setOmnivoiceVoiceId: (voiceId: string) => void;
+    setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'qwen3-tts-multilingual') => void;
+    setQwenTtsLanguage: (language: string) => void;
+    setQwenTtsVoiceId: (voiceId: string) => void;
     setOpenaiVoice: (voice: string) => void;
     setOpenaiApiKey: (apiKey: string) => void;
     setOpenaiCompatibleUrl: (url: string) => void;
@@ -1239,26 +1239,26 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 0;
                 })(),
-                // Local TTS engine ('kokoro-en-v0_19' or 'omnivoice-multilingual') - defaults to Kokoro
+                // Local TTS engine ('kokoro-en-v0_19' or 'qwen3-tts-multilingual') - defaults to Kokoro
                 localTtsModelId: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('localTtsModelId');
-                        if (saved === 'kokoro-en-v0_19' || saved === 'omnivoice-multilingual' || saved === 'qwen3-tts-multilingual') return saved;
+                        if (saved === 'kokoro-en-v0_19' || saved === 'qwen3-tts-multilingual') return saved;
                     }
                     return 'kokoro-en-v0_19';
                 })(),
-                // OmniVoice language hint - load from localStorage or default to empty (infer from text)
-                omnivoiceLanguage: (() => {
+                // Qwen3-TTS language hint - load from localStorage or default to empty (infer from text)
+                qwenTtsLanguage: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('omnivoiceLanguage');
+                        const saved = localStorage.getItem('qwenTtsLanguage');
                         if (saved) return saved;
                     }
                     return '';
                 })(),
-                // OmniVoice cloned-voice profile id - load from localStorage or default to empty (model default voice)
-                omnivoiceVoiceId: (() => {
+                // Qwen3-TTS cloned-voice profile id - load from localStorage or default to empty (model default voice)
+                qwenTtsVoiceId: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('omnivoiceVoiceId');
+                        const saved = localStorage.getItem('qwenTtsVoiceId');
                         if (saved) return saved;
                     }
                     return '';
@@ -2915,24 +2915,24 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'omnivoice-multilingual' | 'qwen3-tts-multilingual') => {
+                setLocalTtsModelId: (modelId: 'kokoro-en-v0_19' | 'qwen3-tts-multilingual') => {
                     set({ localTtsModelId: modelId });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('localTtsModelId', modelId);
                     }
                 },
 
-                setOmnivoiceLanguage: (language: string) => {
-                    set({ omnivoiceLanguage: language });
+                setQwenTtsLanguage: (language: string) => {
+                    set({ qwenTtsLanguage: language });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('omnivoiceLanguage', language);
+                        localStorage.setItem('qwenTtsLanguage', language);
                     }
                 },
 
-                setOmnivoiceVoiceId: (voiceId: string) => {
-                    set({ omnivoiceVoiceId: voiceId });
+                setQwenTtsVoiceId: (voiceId: string) => {
+                    set({ qwenTtsVoiceId: voiceId });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('omnivoiceVoiceId', voiceId);
+                        localStorage.setItem('qwenTtsVoiceId', voiceId);
                     }
                 },
 

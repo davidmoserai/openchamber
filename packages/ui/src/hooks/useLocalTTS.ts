@@ -20,9 +20,9 @@ export interface LocalTTSSpeakOptions {
     speakerId?: number;
     /** Playback speed multiplier (1.0 = normal) */
     speed?: number;
-    /** OmniVoice: ISO 639 language hint (omit to infer from text) */
+    /** Qwen3-TTS: language hint (omit to infer from text) */
     language?: string;
-    /** OmniVoice: saved voice-profile id to clone from (omit for the default voice) */
+    /** Qwen3-TTS: saved voice-profile id to clone from (omit for the default voice) */
     refVoiceId?: string;
     onStart?: () => void;
     onEnd?: () => void;
@@ -178,12 +178,12 @@ export function useLocalTTS(): UseLocalTTSReturn {
         sessionRef.current = session;
 
         // Chunks are pipelined as independent requests for low time-to-first-audio.
-        // The cloning-capable engines (OmniVoice, Qwen3-TTS) have no fixed
-        // speaker without an explicit cloned voice, so they'd otherwise sample
-        // a new random identity per chunk; a shared per-message session id
-        // lets the server pin every chunk after the first to the voice that
-        // first chunk happened to get.
-        const isCloningCapableEngine = options?.model === 'omnivoice-multilingual' || options?.model === 'qwen3-tts-multilingual';
+        // The Qwen3-TTS engine has no fixed speaker without an explicit
+        // cloned voice, so it would otherwise sample a new random identity
+        // per chunk; a shared per-message session id lets the server pin
+        // every chunk after the first to the voice that first chunk
+        // happened to get.
+        const isCloningCapableEngine = options?.model === 'qwen3-tts-multilingual';
         const voiceSessionId = isCloningCapableEngine ? crypto.randomUUID() : undefined;
 
         const fetchChunk = async (chunk: string): Promise<ArrayBuffer> => {

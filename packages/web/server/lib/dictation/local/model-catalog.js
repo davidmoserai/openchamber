@@ -83,20 +83,13 @@ export const LOCAL_TTS_MODEL_CATALOG = {
     description: 'Kokoro TTS (English, natural voices)',
   },
   /**
-   * These run as Python (mlx-audio) sidecars rather than sherpa-onnx
-   * archives -- they have no `files`/`archiveUrl`, so install/download
-   * state is handled by `../mlx-audio-manager.js` instead of
-   * `model-downloader.js`'s generic archive path. See
-   * `isLocalTtsModelId`/`getLocalSttModelSpec` callers, which branch on
-   * `type === 'mlx-audio'`. `modelRepo` is the Hugging Face repo the
-   * generic sidecar loads. MLX only targets Apple Silicon.
+   * Runs as a Python (mlx-audio) sidecar rather than a sherpa-onnx archive --
+   * it has no `files`/`archiveUrl`, so install/download state is handled by
+   * `../mlx-audio-manager.js` instead of `model-downloader.js`'s generic
+   * archive path. See `isLocalTtsModelId`/`getLocalSttModelSpec` callers,
+   * which branch on `type === 'mlx-audio'`. `modelRepo` is the Hugging Face
+   * repo the generic sidecar loads. MLX only targets Apple Silicon.
    */
-  'omnivoice-multilingual': {
-    type: 'mlx-audio',
-    modelRepo: 'SwinliQ-AI-2/OmniVoice-MLX-4bit',
-    files: {},
-    description: 'OmniVoice (600+ languages, zero-shot voice cloning, MLX-native, Apple Silicon only)',
-  },
   'qwen3-tts-multilingual': {
     type: 'mlx-audio',
     modelRepo: 'mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit',

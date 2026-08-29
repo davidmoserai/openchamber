@@ -1,5 +1,5 @@
 /**
- * One-shot mic recorder for capturing a short reference clip (OmniVoice
+ * One-shot mic recorder for capturing a short reference clip (Qwen3-TTS
  * voice cloning). Unlike useDictationAudioSource (streaming PCM for STT),
  * this records a single clip via MediaRecorder and hands back a normalized
  * WAV Blob — the format the recording browser produces (webm/opus, mp4,

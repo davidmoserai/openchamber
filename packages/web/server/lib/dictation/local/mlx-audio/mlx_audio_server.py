@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 Generic mlx-audio inference sidecar -- works for any mlx-audio TTS model
-(Qwen3-TTS, OmniVoice-MLX, or future additions), selected by the Hugging
-Face repo id passed as argv[1]. This is what lets ../mlx-audio-manager.js
-be a single generic manager rather than one near-duplicate file per model.
+(currently Qwen3-TTS; OmniVoice-MLX was evaluated and removed in favor of
+it), selected by the Hugging Face repo id passed as argv[1]. This is what
+lets ../mlx-audio-manager.js be a single generic manager rather than one
+file per model.
 
-Same newline-delimited JSON protocol as the (removed) OmniVoice/Qwen3-TTS
-PyTorch-era sidecars:
+Newline-delimited JSON protocol:
 
   stdin  (per line): {"id": str, "cmd": "generate", "text": str,
                       "refAudioPath"?: str, "refText"?: str,

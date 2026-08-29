@@ -119,7 +119,7 @@ export function createDictationRuntime({
     }
   });
 
-  // Saved reference-voice clips for OmniVoice zero-shot cloning.
+  // Saved reference-voice clips for zero-shot cloning.
   app.get('/api/dictation/tts/voices', async (_req, res) => {
     try {
       res.json({ voices: await service.listVoices() });
